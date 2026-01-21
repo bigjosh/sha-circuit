@@ -1,6 +1,6 @@
 ## TLDR
 
-You can jump direct to the [Complete Workflow](#Complete Workflow) if you want to generate an SHA256 hash via NAND gates using your own input.
+You can jump direct to the [Complete Workflow](#Complete-Workflow) if you want to generate an SHA256 hash via NAND gates using your own input.
 
 # SHA-256 Circuit Representation
 
