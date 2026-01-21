@@ -198,6 +198,7 @@ Evaluate the NAND circuit and output the hash.
 ```bash
 python eval-nands.py
 python eval-nands.py -d ./circuit_dir
+python eval-nands.py -n nands-optimized.txt   # Use a different NAND file
 ```
 
 NOTE: Importantly, this program is essentially just the single expression....
@@ -206,7 +207,28 @@ NOTE: Importantly, this program is essentially just the single expression....
 nodes[label] = not (nodes[a] and nodes[b])
 ```
 
-...applied consecutively to each line in the `nands.txt` file so it is very easy to verify. 
+...applied consecutively to each line in the `nands.txt` file so it is very easy to verify.
+
+#### optimize-nands.py
+
+Optimize the NAND circuit to reduce gate count while preserving functionality.
+
+```bash
+python optimize-nands.py
+python optimize-nands.py -i nands.txt -o nands-optimized.txt
+python optimize-nands.py -q   # Quiet mode
+```
+
+Applies multiple optimization passes:
+- **Constant folding**: Simplifies expressions with CONST-0/CONST-1
+- **Algebraic**: NAND(x, NOT(x)) = 1
+- **Double negation**: NOT(NOT(x)) = x
+- **Redundant copy**: Removes unnecessary copy chains
+- **Share inverters**: Merges duplicate NOT gates
+- **CSE**: Common subexpression elimination
+- **Dead code**: Removes unused gates
+
+Typical reduction: ~17% (510,208 → 422,248 gates)
 
 ### NAND Decomposition
 
@@ -254,4 +276,5 @@ python -c "import hashlib; print(hashlib.sha256(b'hello').hexdigest())"
 | functions.txt | 2,864 | Word-level operations |
 | constants-bits.txt | 2,306 | 72×32 + 2 special constants |
 | input-bits.txt | 512 | 16×32 bits |
-| nands.txt | 529,408 | NAND gates |
+| nands.txt | 510,208 | NAND gates |
+| nands-optimized.txt | 422,248 | Optimized NAND gates (~17% smaller) |

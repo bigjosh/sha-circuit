@@ -144,24 +144,14 @@ class NandConverter:
         for i in range(32):
             prefix = f"{out_label}-B{i}"
             s, carry = self.full_adder(prefix, a_bits[i], b_bits[i], carry)
-            # Rename sum to final output bit label
-            out_bit = f"{out_label}-B{i}"
-            self.emit(out_bit, s, s)  # NAND(s,s) = NOT(s), then we need s
-            # Actually, just alias it - but we can't alias in NAND-only
-            # So we use double-NOT: NOT(NOT(s)) = s
-            out_bits.append(s)  # Use s directly since it's already labeled
-
-        # Re-register with correct bit labels
-        # The full_adder returns temp labels, we need to map them
-        final_bits = []
-        for i, s in enumerate(out_bits):
+            # full_adder returns a temp label for sum, copy to final label
             out_bit = f"{out_label}-B{i}"
             # Double NOT to copy: NOT(NOT(x)) = x
-            t = self.emit(self.temp_label(f"{out_label}-B{i}"), s, s)
+            t = self.emit(self.temp_label(prefix), s, s)
             self.emit(out_bit, t, t)
-            final_bits.append(out_bit)
+            out_bits.append(out_bit)
 
-        self.register_word(out_label, final_bits)
+        self.register_word(out_label, out_bits)
 
     def convert_rotr(self, out_label, in_label, n):
         """Convert ROTR operation - pure rewiring."""

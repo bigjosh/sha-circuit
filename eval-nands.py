@@ -5,6 +5,7 @@ Evaluate NAND circuit and output SHA-256 hash.
 Usage:
     python eval-nands.py
     python eval-nands.py -d /path/to/circuit
+    python eval-nands.py -n nands-optimized.txt
 """
 
 import argparse
@@ -14,6 +15,7 @@ import os
 def main():
     parser = argparse.ArgumentParser(description="Evaluate NAND circuit")
     parser.add_argument("--dir", "-d", default=".", help="Directory containing circuit files")
+    parser.add_argument("--nands", "-n", default=None, help="Path to NAND file (default: nands.txt in dir)")
     args = parser.parse_args()
 
     nodes = {}  # label -> bool
@@ -34,8 +36,9 @@ def main():
                 label, value = line.split(',')
                 nodes[label] = value == '1'
 
-    # Process nands.txt
-    with open(os.path.join(args.dir, "nands.txt"), 'r') as f:
+    # Process nands file
+    nands_path = args.nands if args.nands else os.path.join(args.dir, "nands.txt")
+    with open(nands_path, 'r') as f:
         for line in f:
             line = line.strip()
             if line:
