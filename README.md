@@ -211,7 +211,7 @@ nodes[label] = not (nodes[a] and nodes[b])
 
 #### optimize-nands.py
 
-Optimize the NAND circuit to reduce gate count while preserving functionality.
+Basic NAND circuit optimizer with standard optimization passes.
 
 ```bash
 python optimize-nands.py
@@ -228,7 +228,70 @@ Applies multiple optimization passes:
 - **CSE**: Common subexpression elimination
 - **Dead code**: Removes unused gates
 
-Typical reduction: ~17% (510,208 → 422,248 gates)
+#### advanced-optimizer.py
+
+Advanced optimizer with more aggressive optimization techniques.
+
+```bash
+python advanced-optimizer.py
+python advanced-optimizer.py -i nands.txt -o nands-optimized.txt
+```
+
+Additional optimizations beyond the basic optimizer:
+- **Deep double negation**: More aggressive NOT(NOT(x)) elimination
+- **AND/OR simplification**: Recognizes and simplifies AND(x,x) and OR(x,x) patterns
+- **XOR chain optimization**: Identifies and shares XOR subexpressions
+- **NAND identity**: Merges NAND(x, CONST-1) with equivalent NOT(x) gates
+
+#### maj-rewriter.py
+
+Specialized optimizer that rewrites MAJ (majority) function patterns.
+
+```bash
+python maj-rewriter.py
+python maj-rewriter.py -i nands-optimized.txt -o nands-maj-opt.txt
+```
+
+The MAJ function `MAJ(a,b,c) = (a AND b) XOR (a AND c) XOR (b AND c)` is used 2,048 times in SHA-256 (64 rounds × 32 bits). The standard XOR-based implementation uses 14 NANDs per bit, but an equivalent OR-based form uses only 6 NANDs:
+
+```
+MAJ(a,b,c) = OR(OR(AND(a,b), AND(a,c)), AND(b,c))
+
+Efficient NAND implementation (6 gates):
+1. ab_nand = NAND(a, b)
+2. ac_nand = NAND(a, c)
+3. bc_nand = NAND(b, c)
+4. x = NAND(ab_nand, ac_nand)
+5. not_x = NAND(x, x)
+6. maj = NAND(not_x, bc_nand)
+```
+
+This single optimization saves ~14,000 gates.
+
+#### verify-circuit.py
+
+Verification tool that tests the NAND circuit against Python's reference SHA-256.
+
+```bash
+python verify-circuit.py -n nands-optimized.txt
+python verify-circuit.py -n nands-optimized.txt --tests 20  # More random tests
+python verify-circuit.py -n nands-optimized.txt -v          # Verbose output
+```
+
+Runs multiple test cases including edge cases (empty message, single char) and random inputs to verify the optimized circuit produces correct SHA-256 hashes.
+
+### Optimization Results
+
+Starting from 510,208 NAND gates, the optimization pipeline achieves:
+
+| Stage | Gates | Reduction |
+|-------|-------|-----------|
+| Original (nands.txt) | 510,208 | - |
+| Basic optimizer | 422,248 | 17% |
+| Advanced optimizer | 270,680 | 36% |
+| MAJ rewriter | **256,249** | **50%** |
+
+**Total reduction: 253,959 gates (49.8%)**
 
 ### NAND Decomposition
 
@@ -238,8 +301,11 @@ Typical reduction: ~17% (510,208 → 422,248 gates)
 | AND(A,B) | 2 | `NAND(NAND(A,B), NAND(A,B))` |
 | OR(A,B) | 3 | `NAND(NAND(A,A), NAND(B,B))` |
 | XOR(A,B) | 4 | `NAND(NAND(A,t), NAND(B,t))` where `t=NAND(A,B)` |
-| ROTR/SHR | 2 | Rewiring with double-NOT to copy bits |
+| XOR(A,B,C) | 8 | Two chained 2-input XORs |
+| ROTR/SHR | 0 | Pure rewiring (no gates needed after optimization) |
 | ADD | ~9 | Full adder per bit (ripple-carry) |
+| MAJ(A,B,C) | 6 | Optimized OR-based form (was 14 with XOR form) |
+| CH(E,F,G) | 9 | `XOR(AND(E,F), AND(NOT(E),G))` |
 
 ## Complete Workflow
 
@@ -276,5 +342,15 @@ python -c "import hashlib; print(hashlib.sha256(b'hello').hexdigest())"
 | functions.txt | 2,864 | Word-level operations |
 | constants-bits.txt | 2,306 | 72×32 + 2 special constants |
 | input-bits.txt | 512 | 16×32 bits |
-| nands.txt | 510,208 | NAND gates |
-| nands-optimized.txt | 422,248 | Optimized NAND gates (~17% smaller) |
+| nands.txt | 510,208 | NAND gates (unoptimized) |
+| nands-optimized.txt | 256,249 | Optimized NAND gates (~50% smaller) |
+
+### Gate Distribution (Optimized Circuit)
+
+| Operation | Gates | Percentage |
+|-----------|-------|------------|
+| ADD (32-bit adders) | 141,033 | 55% |
+| Sigma functions (XOR chains) | 88,048 | 34% |
+| MAJ (majority) | 10,272 | 4% |
+| CH (choice) | 16,384 | 6% |
+| OUTPUT | 512 | <1% |
