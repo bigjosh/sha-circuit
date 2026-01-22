@@ -268,6 +268,37 @@ Efficient NAND implementation (6 gates):
 
 This single optimization saves ~14,000 gates.
 
+#### constant-propagation.py
+
+Constant propagation optimizer that loads actual bit values from constants-bits.txt and propagates them through the circuit.
+
+```bash
+python constant-propagation.py
+python constant-propagation.py -i nands-optimized.txt -o nands-const-prop.txt
+```
+
+Unlike basic constant folding which only knows about CONST-0 and CONST-1 labels, this optimizer:
+- Loads actual constant bit values from constants-bits.txt (K-* and H-INIT-* constants)
+- Propagates these known values through the circuit
+- Applies NAND simplification rules:
+  - `NAND(0, x) = 1` → replace with CONST-1
+  - `NAND(x, 0) = 1` → replace with CONST-1
+  - `NAND(1, 1) = 0` → replace with CONST-0
+
+This catches optimizations missed by basic constant folding and saves ~5,300 gates.
+
+#### iterative-optimize.py
+
+Runs constant propagation and standard optimization passes iteratively until convergence.
+
+```bash
+python iterative-optimize.py
+python iterative-optimize.py -i nands-optimized.txt -o nands-final.txt
+python iterative-optimize.py --max-rounds 10  # Limit iterations
+```
+
+Alternates between constant propagation and standard optimizations to find opportunities that each pass exposes for the other, automatically stopping when no more improvements are found.
+
 #### verify-circuit.py
 
 Verification tool that tests the NAND circuit against Python's reference SHA-256.
@@ -289,9 +320,10 @@ Starting from 510,208 NAND gates, the optimization pipeline achieves:
 | Original (nands.txt) | 510,208 | - |
 | Basic optimizer | 422,248 | 17% |
 | Advanced optimizer | 270,680 | 36% |
-| MAJ rewriter | **256,249** | **50%** |
+| MAJ rewriter | 256,249 | 50% |
+| Constant propagation | **250,931** | **51%** |
 
-**Total reduction: 253,959 gates (49.8%)**
+**Total reduction: 259,277 gates (50.8%)**
 
 ### NAND Decomposition
 
@@ -333,10 +365,14 @@ python eval-nands.py
 python optimize-nands.py                    # Basic optimizer: 510K -> 422K gates
 python advanced-optimizer.py                # Advanced optimizer: 422K -> 270K gates
 python maj-rewriter.py                      # MAJ rewriter: 270K -> 256K gates
+python constant-propagation.py              # Constant propagation: 256K -> 251K gates
+
+# Alternative: Use iterative optimizer (runs all passes until convergence)
+python iterative-optimize.py -i nands-optimized.txt -o nands-final.txt
 
 # 7. Verify optimized circuit
-python verify-circuit.py -n nands-optimized.txt
-python eval-nands.py -n nands-optimized.txt
+python verify-circuit.py -n nands-final.txt
+python eval-nands.py -n nands-final.txt
 # Output: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
 
 # 8. Verify against reference
@@ -353,7 +389,8 @@ python -c "import hashlib; print(hashlib.sha256(b'hello').hexdigest())"
 | constants-bits.txt | 2,306 | 72×32 + 2 special constants |
 | input-bits.txt | 512 | 16×32 bits |
 | nands.txt | 510,208 | NAND gates (unoptimized) |
-| nands-optimized.txt | 256,249 | Optimized NAND gates (~50% smaller) |
+| nands-optimized.txt | 256,249 | After basic/advanced/MAJ optimizers |
+| nands-final.txt | 250,931 | Fully optimized (~51% smaller) |
 
 ### Gate Distribution (Optimized Circuit)
 
@@ -364,3 +401,70 @@ python -c "import hashlib; print(hashlib.sha256(b'hello').hexdigest())"
 | MAJ (majority) | 10,272 | 4% |
 | CH (choice) | 16,384 | 6% |
 | OUTPUT | 512 | <1% |
+
+## Circuit Visualization
+
+Tools for visualizing the circuit structure and analyzing the dataflow.
+
+### analyze-layers.py
+
+Analyze the layer structure and critical path depth of the circuit.
+
+```bash
+python analyze-layers.py
+python analyze-layers.py -n nands-final.txt
+python analyze-layers.py -n nands-final.txt -v  # Verbose output
+```
+
+Computes layers where:
+- **Layer 0**: Input bits and constant bits
+- **Layer N**: Gates where `max(layer(input_a), layer(input_b)) = N-1`
+
+The maximum layer number represents the critical path depth (longest dependency chain).
+
+### generate-visualization.py
+
+Generate an interactive HTML visualization of the circuit.
+
+```bash
+python generate-visualization.py
+python generate-visualization.py -n nands-final.txt -o visualization.html
+python generate-visualization.py -n nands-final.txt -c constants-bits.txt
+```
+
+Creates a self-contained HTML file with embedded JavaScript that visualizes the circuit as a 2D pixel map:
+
+**Features:**
+- Each gate = 1 pixel with color coding:
+  - Green = input bits (INPUT-*)
+  - Yellow = constant bits (K-*, H-INIT-*, CONST-*)
+  - Blue = computation gates
+  - Red = output bits (OUTPUT-*)
+- **Layer-based layout**: Layer 0 at top, subsequent layers below
+- **Interactive controls**:
+  - Mouse hover: Show gate details and direct connections
+  - Click input bits: Trace all dependent gates (highlights in yellow)
+  - Mouse wheel: Zoom in/out
+  - Drag: Pan view
+  - Keyboard: R (reset view), +/- (zoom)
+  - "Find Inputs" button: Navigate to input layer
+
+**Circuit Statistics:**
+- Total gates: ~250,000
+- Layers: ~5,300 (critical path depth)
+- Widest layer: ~1,300 gates
+- Fully self-contained (no external dependencies)
+
+Open the generated HTML file in any modern browser to explore the circuit structure interactively.
+
+### visualize-circuit.py
+
+Alternative pygame-based interactive visualizer (requires pygame installation).
+
+```bash
+pip install pygame
+python visualize-circuit.py
+python visualize-circuit.py -n nands-final.txt
+```
+
+Similar features to the HTML version but runs as a native application. Use the HTML version if pygame installation is problematic.
