@@ -329,7 +329,17 @@ python convert-to-nands.py
 python eval-nands.py
 # Output: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
 
-# 6. Verify against reference
+# 6. Optimize the circuit (optional but recommended)
+python optimize-nands.py                    # Basic optimizer: 510K -> 422K gates
+python advanced-optimizer.py                # Advanced optimizer: 422K -> 270K gates
+python maj-rewriter.py                      # MAJ rewriter: 270K -> 256K gates
+
+# 7. Verify optimized circuit
+python verify-circuit.py -n nands-optimized.txt
+python eval-nands.py -n nands-optimized.txt
+# Output: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+
+# 8. Verify against reference
 python -c "import hashlib; print(hashlib.sha256(b'hello').hexdigest())"
 # Output: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
 ```
