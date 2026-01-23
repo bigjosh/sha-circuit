@@ -105,11 +105,12 @@ class CircuitGenerator:
 
     # SHA-256 functions
     def ch(self, label_prefix, x, y, z):
-        """Ch(x,y,z) = (x AND y) XOR (NOT x AND z)."""
-        xy = self.bit_and(f"{label_prefix}-CH-XY", x, y)
-        not_x = self.bit_not(f"{label_prefix}-CH-NX", x)
-        not_x_z = self.bit_and(f"{label_prefix}-CH-NXZ", not_x, z)
-        return self.bit_xor(f"{label_prefix}-CH", xy, not_x_z)
+        """Ch(x,y,z) = (x AND y) XOR (NOT x AND z).
+
+        Equivalent to: if x then y else z (2:1 multiplexer)
+        Emitted as native CH operation for optimal NAND decomposition.
+        """
+        return self.add_function(f"{label_prefix}-CH", "CH", [x, y, z])
 
     def maj(self, label_prefix, x, y, z):
         """Maj(x,y,z) = (x AND y) XOR (x AND z) XOR (y AND z)."""

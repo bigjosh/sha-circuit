@@ -217,6 +217,44 @@ class NandConverter:
             out_bits.append(out_bit)
         self.register_word(out_label, out_bits)
 
+    def convert_ch(self, out_label, e_label, f_label, g_label):
+        """Convert CH operation to optimal 4-NAND form.
+
+        CH(e,f,g) = (e AND f) XOR ((NOT e) AND g)
+        Equivalent to: if e then f else g (2:1 MUX)
+
+        Optimal 4-NAND implementation per bit:
+        1. nand_ef = NAND(e, f)
+        2. not_e = NAND(e, e)
+        3. nand_noteg = NAND(not_e, g)
+        4. result = NAND(nand_ef, nand_noteg)
+
+        Saves 5 NANDs per bit vs standard implementation (9 → 4).
+        """
+        e_bits = self.get_bits(e_label)
+        f_bits = self.get_bits(f_label)
+        g_bits = self.get_bits(g_label)
+        out_bits = []
+
+        for i in range(32):
+            prefix = f"{out_label}-B{i}"
+
+            # 1. NAND(e, f)
+            nand_ef = self.nand(prefix, e_bits[i], f_bits[i])
+
+            # 2. NOT(e) = NAND(e, e)
+            not_e = self.nand(prefix, e_bits[i], e_bits[i])
+
+            # 3. NAND(NOT(e), g)
+            nand_noteg = self.nand(prefix, not_e, g_bits[i])
+
+            # 4. result = NAND(nand_ef, nand_noteg)
+            out_bit = f"{out_label}-B{i}"
+            self.emit(out_bit, nand_ef, nand_noteg)
+            out_bits.append(out_bit)
+
+        self.register_word(out_label, out_bits)
+
     def convert_function(self, label, func, inputs):
         """Convert a single function to NANDs."""
         if func == "XOR":
@@ -229,6 +267,8 @@ class NandConverter:
             self.convert_not(label, inputs[0])
         elif func == "ADD":
             self.convert_add(label, inputs[0], inputs[1])
+        elif func == "CH":
+            self.convert_ch(label, inputs[0], inputs[1], inputs[2])
         elif func == "COPY":
             self.convert_copy(label, inputs[0])
         elif func.startswith("ROTR"):

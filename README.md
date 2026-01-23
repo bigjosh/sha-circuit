@@ -313,17 +313,18 @@ Runs multiple test cases including edge cases (empty message, single char) and r
 
 ### Optimization Results
 
-Starting from 510,208 NAND gates, the optimization pipeline achieves:
+Starting from 510,208 NAND gates (old) / 461,568 (with CH optimization), the optimization pipeline achieves:
 
-| Stage | Gates | Reduction |
-|-------|-------|-----------|
-| Original (nands.txt) | 510,208 | - |
-| Basic optimizer | 422,248 | 17% |
-| Advanced optimizer | 270,680 | 36% |
-| MAJ rewriter | 256,249 | 50% |
-| Constant propagation | **250,931** | **51%** |
+| Stage | Old Pipeline | New Pipeline (CH-opt) | Reduction |
+|-------|--------------|----------------------|-----------|
+| Original (nands.txt) | 510,208 | 461,568 | - |
+| Basic optimizer | 422,248 | 412,008 | 10% / 11% |
+| Advanced optimizer | 270,680 | 260,440 | 47% / 44% |
+| MAJ rewriter | 256,249 | 246,072 | 50% / 47% |
+| Constant propagation | 250,931 | **241,057** | 51% / **52.8%** |
 
-**Total reduction: 259,277 gates (50.8%)**
+**Best result: 241,057 gates (52.8% reduction from original 510,208)**
+**Total savings: 269,151 gates**
 
 ### NAND Decomposition
 
@@ -337,9 +338,11 @@ Starting from 510,208 NAND gates, the optimization pipeline achieves:
 | ROTR/SHR | 0 | Pure rewiring (no gates needed after optimization) |
 | ADD | 13 | Optimized full adder with gate sharing (was 15) |
 | MAJ(A,B,C) | 6 | Optimized OR-based form (was 14 with XOR form) |
-| CH(E,F,G) | 9 | `XOR(AND(E,F), AND(NOT(E),G))` |
+| CH(E,F,G) | 4 | Optimal MUX form: `NAND(NAND(e,f), NAND(NOT(e),g))` (was 9) |
 
 **Full Adder Optimization**: The standard full adder implementation uses 15 NANDs (2 XORs + 2 ANDs + 1 OR). By reusing intermediate NAND results from the XOR gates, the optimized implementation reduces this to 13 NANDs while computing the same function. This saves 38,400 gates in the unoptimized circuit (7.5%). After the complete optimization pipeline, final gate counts are nearly identical (~251K gates) because downstream optimizations (CSE, constant propagation) can largely compensate for full adder inefficiencies.
+
+**CH Function Optimization**: The CH (choice) function `CH(e,f,g) = (e AND f) XOR ((NOT e) AND g)` is equivalent to a 2:1 multiplexer: "if e then f else g". The standard decomposition uses 9 NANDs, but recognizing it as a MUX allows a direct 4-NAND implementation. This optimization is implemented natively in the circuit generator and saves 48,640 gates in the unoptimized circuit (9.5%), with 9,874 gates remaining after the full optimization pipeline (3.9% additional reduction).
 
 ## Complete Workflow
 
@@ -387,12 +390,12 @@ python -c "import hashlib; print(hashlib.sha256(b'hello').hexdigest())"
 | File | Lines | Description |
 |------|-------|-------------|
 | constants.txt | 72 | 64 K + 8 H_INIT |
-| functions.txt | 2,864 | Word-level operations |
+| functions.txt | 2,672 | Word-level operations (with native CH) |
 | constants-bits.txt | 2,306 | 72×32 + 2 special constants |
 | input-bits.txt | 512 | 16×32 bits |
-| nands.txt | 510,208 | NAND gates (unoptimized) |
-| nands-optimized.txt | 256,249 | After basic/advanced/MAJ optimizers |
-| nands-final.txt | 250,931 | Fully optimized (~51% smaller) |
+| nands.txt | 461,568 | NAND gates (unoptimized, with 4-NAND CH) |
+| nands-optimized.txt | 246,072 | After basic/advanced/MAJ optimizers |
+| nands-final-ch4.txt | 241,057 | Fully optimized (~52.8% smaller) |
 
 ### Gate Distribution (Optimized Circuit)
 
