@@ -64,14 +64,35 @@ class NandConverter:
         return s, c
 
     def full_adder(self, prefix, a, b, cin):
-        """Full adder: returns (sum, cout)"""
-        # sum = a XOR b XOR cin
-        ab_xor = self.xor_gate(prefix, a, b)
-        s = self.xor_gate(prefix, ab_xor, cin)
-        # cout = (a AND b) OR (cin AND (a XOR b))
-        ab_and = self.and_gate(prefix, a, b)
-        cin_ab = self.and_gate(prefix, cin, ab_xor)
-        cout = self.or_gate(prefix, ab_and, cin_ab)
+        """Optimized full adder: 13 NANDs (was 15).
+
+        Uses shared intermediate values to reduce gate count:
+        - XOR(a,b) computation includes NAND(a,b) which is reused for AND(a,b)
+        - XOR result with cin includes NAND(xor,cin) which is reused for AND(cin,xor)
+        """
+        # XOR(a,b) - 4 gates
+        nand_ab = self.nand(prefix, a, b)
+        t1 = self.nand(prefix, a, nand_ab)
+        t2 = self.nand(prefix, b, nand_ab)
+        xor_ab = self.nand(prefix, t1, t2)
+
+        # XOR(xor_ab, cin) for sum - 4 gates
+        nand_xor_cin = self.nand(prefix, xor_ab, cin)
+        t3 = self.nand(prefix, xor_ab, nand_xor_cin)
+        t4 = self.nand(prefix, cin, nand_xor_cin)
+        s = self.nand(prefix, t3, t4)
+
+        # AND(a,b) - 1 gate (reuses nand_ab from XOR)
+        and_ab = self.nand(prefix, nand_ab, nand_ab)
+
+        # AND(cin, xor_ab) - 1 gate (reuses nand_xor_cin from XOR)
+        and_cin = self.nand(prefix, nand_xor_cin, nand_xor_cin)
+
+        # OR(and_ab, and_cin) for cout - 3 gates
+        t5 = self.nand(prefix, and_ab, and_ab)
+        t6 = self.nand(prefix, and_cin, and_cin)
+        cout = self.nand(prefix, t5, t6)
+
         return s, cout
 
     def register_word(self, label, bit_labels):

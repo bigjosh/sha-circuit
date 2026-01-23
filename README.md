@@ -335,9 +335,11 @@ Starting from 510,208 NAND gates, the optimization pipeline achieves:
 | XOR(A,B) | 4 | `NAND(NAND(A,t), NAND(B,t))` where `t=NAND(A,B)` |
 | XOR(A,B,C) | 8 | Two chained 2-input XORs |
 | ROTR/SHR | 0 | Pure rewiring (no gates needed after optimization) |
-| ADD | ~9 | Full adder per bit (ripple-carry) |
+| ADD | 13 | Optimized full adder with gate sharing (was 15) |
 | MAJ(A,B,C) | 6 | Optimized OR-based form (was 14 with XOR form) |
 | CH(E,F,G) | 9 | `XOR(AND(E,F), AND(NOT(E),G))` |
+
+**Full Adder Optimization**: The standard full adder implementation uses 15 NANDs (2 XORs + 2 ANDs + 1 OR). By reusing intermediate NAND results from the XOR gates, the optimized implementation reduces this to 13 NANDs while computing the same function. This saves 38,400 gates in the unoptimized circuit (7.5%). After the complete optimization pipeline, final gate counts are nearly identical (~251K gates) because downstream optimizations (CSE, constant propagation) can largely compensate for full adder inefficiencies.
 
 ## Complete Workflow
 
