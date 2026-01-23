@@ -198,7 +198,7 @@ Evaluate the NAND circuit and output the hash.
 ```bash
 python eval-nands.py
 python eval-nands.py -d ./circuit_dir
-python eval-nands.py -n nands-optimized.txt   # Use a different NAND file
+python eval-nands.py -n nands-optimized-final.txt   # Use a different NAND file
 ```
 
 NOTE: Importantly, this program is essentially just the single expression....
@@ -209,144 +209,91 @@ nodes[label] = not (nodes[a] and nodes[b])
 
 ...applied consecutively to each line in the `nands.txt` file so it is very easy to verify.
 
-#### xor-share-optimizer.py
+#### optimization-pipeline.py
 
-Specialized optimizer that identifies and optimizes XOR patterns with constant inputs.
-
-```bash
-python xor-share-optimizer.py
-python xor-share-optimizer.py -i nands.txt -o nands-xor-opt.txt
-```
-
-Recognizes and optimizes:
-- **XOR(CONST-0, x) = x**: Identity operation, eliminates 4 NANDs per occurrence
-- **XOR(CONST-1, x) = NOT(x)**: Reduces 4 NANDs to 1
-
-This optimization is particularly effective in SHA-256 because full adders start with carry=CONST-0, creating many XOR(0,x) patterns. Found 600 such patterns, saving ~4,800 gates before standard optimizations.
-
-**Important**: Run this optimizer BEFORE the standard optimization pipeline for best results.
-
-#### optimize-nands.py
-
-Basic NAND circuit optimizer with standard optimization passes.
+Comprehensive optimization pipeline that combines all optimization strategies into a single tool.
 
 ```bash
-python optimize-nands.py
-python optimize-nands.py -i nands.txt -o nands-optimized.txt
-python optimize-nands.py -q   # Quiet mode
+# From existing NAND file:
+python optimization-pipeline.py -n nands.txt -o nands-optimized-final.txt -v
+
+# From functions.txt (includes conversion):
+python optimization-pipeline.py -f functions.txt -o nands-optimized-final.txt -v
+
+# With custom constants and more verification tests:
+python optimization-pipeline.py -n nands.txt -c constants-bits.txt -o output.txt -v -t 10
 ```
 
-Applies multiple optimization passes:
-- **Constant folding**: Simplifies expressions with CONST-0/CONST-1
-- **Algebraic**: NAND(x, NOT(x)) = 1
-- **Double negation**: NOT(NOT(x)) = x
-- **Redundant copy**: Removes unnecessary copy chains
-- **Share inverters**: Merges duplicate NOT gates
-- **CSE**: Common subexpression elimination
-- **Dead code**: Removes unused gates
+**Input/Output:**
+- **Input**: Either `nands.txt` (bit-level NAND gates) OR `functions.txt` (word-level functions)
+- **Constants**: Reads `constants-bits.txt` for constant values
+- **Output**: Optimized `nands.txt` file with `OUTPUT-W{0-7}-B{0-31}` labels
 
-#### advanced-optimizer.py
+**Optimization Passes** (applied iteratively until convergence):
+1. **Output renaming**: Converts `FINAL-H*-ADD-B*` labels to `OUTPUT-W*-B*`
+2. **CSE**: Common subexpression elimination
+3. **Constant folding**: Propagates known constant values
+4. **Dead code elimination**: Removes gates not needed for outputs
+5. **Identity patterns**: Eliminates `NOT(NOT(x)) = x` patterns
+6. **XOR(0,x)=x**: Removes identity XOR operations
+7. **XOR(1,x)=NOT(x)**: Simplifies XOR with constant 1
 
-Advanced optimizer with more aggressive optimization techniques.
+#### optimized-converter.py
+
+Converts word-level functions to NAND gates using optimized primitive implementations.
 
 ```bash
-python advanced-optimizer.py
-python advanced-optimizer.py -i nands.txt -o nands-optimized.txt
+python optimized-converter.py -i functions.txt -o nands.txt
 ```
 
-Additional optimizations beyond the basic optimizer:
-- **Deep double negation**: More aggressive NOT(NOT(x)) elimination
-- **AND/OR simplification**: Recognizes and simplifies AND(x,x) and OR(x,x) patterns
-- **XOR chain optimization**: Identifies and shares XOR subexpressions
-- **NAND identity**: Merges NAND(x, CONST-1) with equivalent NOT(x) gates
+**Input/Output:**
+- **Input**: `functions.txt` (word-level functions with labels like `R0-MAJ`, `MSG-W16`)
+- **Output**: `nands.txt` with bit-level NAND gates (labels like `FINAL-H0-ADD-B0`)
 
-#### maj-rewriter.py
+**Optimized Primitives:**
+| Operation | NANDs/bit | Improvement |
+|-----------|-----------|-------------|
+| MAJ(a,b,c) | 6 | Was 14 (XOR form) |
+| CH(e,f,g) | 9 | Was 12 (naive) |
+| Full Adder | 13 | Was 15 (standard) |
 
-Specialized optimizer that rewrites MAJ (majority) function patterns.
-
-```bash
-python maj-rewriter.py
-python maj-rewriter.py -i nands-optimized.txt -o nands-maj-opt.txt
-```
-
-The MAJ function `MAJ(a,b,c) = (a AND b) XOR (a AND c) XOR (b AND c)` is used 2,048 times in SHA-256 (64 rounds × 32 bits). The standard XOR-based implementation uses 14 NANDs per bit, but an equivalent OR-based form uses only 6 NANDs:
-
-```
-MAJ(a,b,c) = OR(OR(AND(a,b), AND(a,c)), AND(b,c))
-
-Efficient NAND implementation (6 gates):
-1. ab_nand = NAND(a, b)
-2. ac_nand = NAND(a, c)
-3. bc_nand = NAND(b, c)
-4. x = NAND(ab_nand, ac_nand)
-5. not_x = NAND(x, x)
-6. maj = NAND(not_x, bc_nand)
-```
-
-This single optimization saves ~14,000 gates.
-
-#### constant-propagation.py
-
-Constant propagation optimizer that loads actual bit values from constants-bits.txt and propagates them through the circuit.
-
-```bash
-python constant-propagation.py
-python constant-propagation.py -i nands-optimized.txt -o nands-const-prop.txt
-```
-
-Unlike basic constant folding which only knows about CONST-0 and CONST-1 labels, this optimizer:
-- Loads actual constant bit values from constants-bits.txt (K-* and H-INIT-* constants)
-- Propagates these known values through the circuit
-- Applies NAND simplification rules:
-  - `NAND(0, x) = 1` → replace with CONST-1
-  - `NAND(x, 0) = 1` → replace with CONST-1
-  - `NAND(1, 1) = 0` → replace with CONST-0
-
-This catches optimizations missed by basic constant folding and saves ~5,300 gates.
-
-#### iterative-optimize.py
-
-Runs constant propagation and standard optimization passes iteratively until convergence.
-
-```bash
-python iterative-optimize.py
-python iterative-optimize.py -i nands-optimized.txt -o nands-final.txt
-python iterative-optimize.py --max-rounds 10  # Limit iterations
-```
-
-Alternates between constant propagation and standard optimizations to find opportunities that each pass exposes for the other, automatically stopping when no more improvements are found.
+Note: Output labels use `FINAL-H*-ADD-B*` format. Use `optimization-pipeline.py` to convert to standard `OUTPUT-W*-B*` format.
 
 #### verify-circuit.py
 
 Verification tool that tests the NAND circuit against Python's reference SHA-256.
 
 ```bash
-python verify-circuit.py -n nands-optimized.txt
-python verify-circuit.py -n nands-optimized.txt --tests 20  # More random tests
-python verify-circuit.py -n nands-optimized.txt -v          # Verbose output
+python verify-circuit.py -n nands-optimized-final.txt
+python verify-circuit.py -n nands-optimized-final.txt --tests 20  # More random tests
+python verify-circuit.py -n nands-optimized-final.txt -v          # Verbose output
 ```
 
 Runs multiple test cases including edge cases (empty message, single char) and random inputs to verify the optimized circuit produces correct SHA-256 hashes.
 
 ### Optimization Results
 
-Starting from 510,208 NAND gates (old) / 461,568 (with CH optimization), the optimization pipeline achieves:
+Starting from 461,568 NAND gates, the optimization pipeline achieves significant reductions:
 
-| Stage | Old Pipeline | CH-opt | CH+XOR-opt | Reduction |
-|-------|--------------|--------|------------|-----------|
-| Original (nands.txt) | 510,208 | 461,568 | 456,768 | - |
-| Basic optimizer | 422,248 | 412,008 | 410,808 | 10% / 11% / 11% |
-| Advanced optimizer | 270,680 | 260,440 | 259,240 | 47% / 44% / 43% |
-| MAJ rewriter | 256,249 | 246,072 | 244,872 | 50% / 47% / 47% |
-| Constant propagation | 250,931 | 241,057 | **239,865** | 51% / 52.8% / **53.0%** |
+| Stage | Gates | Reduction |
+|-------|-------|-----------|
+| Original (`nands.txt`) | 461,568 | - |
+| Basic optimizer | 412,008 | 11% |
+| Advanced optimizer | 260,440 | 44% |
+| MAJ rewriter | 246,072 | 47% |
+| Constant propagation | 241,057 | 48% |
+| Identity pattern elimination | 235,775 | 49% |
+| **Full pipeline** | **234,440** | **49.2%** |
 
-**Best result: 239,865 gates (53.0% reduction from original 510,208)**
-**Total savings: 270,343 gates**
+**Best result: 234,440 gates (49.2% reduction from original 461,568)**
+**Total savings: 227,128 gates**
 
-The CH+XOR-opt pipeline includes:
-1. Native CH function (9→4 NANDs): -48,640 gates
-2. XOR chain sharing (XOR(0,x)=x): -4,800 gates
-3. Standard optimizations: -225,903 gates
+The optimization pipeline combines:
+1. **CSE**: Common subexpression elimination
+2. **Constant folding/propagation**: Evaluates known constants
+3. **Dead code elimination**: Removes unused gates
+4. **Identity patterns**: Eliminates `NOT(NOT(x)) = x` (saves ~4,000 gates)
+5. **XOR optimizations**: `XOR(0,x)=x` and `XOR(1,x)=NOT(x)`
 
 ### NAND Decomposition
 
@@ -370,58 +317,126 @@ The CH+XOR-opt pipeline includes:
 
 ## Complete Workflow
 
+### Data Flow Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ WORD LEVEL (32-bit operations)                                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  input.txt          constants.txt         functions.txt                     │
+│  (16 words)         (72 words)            (2,672 ops)                       │
+│  INPUT-W0..W15      K-0..K-63             R0-MAJ, MSG-W16, etc.             │
+│  "6a6f7368"         H-INIT-0..H-INIT-7    XOR, AND, ADD, ROTR...            │
+│       │                   │                      │                          │
+│       ▼                   ▼                      ▼                          │
+│  ┌─────────┐        ┌──────────┐          ┌─────────────┐                   │
+│  │expand-  │        │expand-   │          │convert-to-  │                   │
+│  │input.py │        │constants │          │nands.py  OR │                   │
+│  └────┬────┘        │.py       │          │optimized-   │                   │
+│       │             └────┬─────┘          │converter.py │                   │
+│       │                  │                └──────┬──────┘                   │
+├───────┼──────────────────┼───────────────────────┼──────────────────────────┤
+│ BIT LEVEL (individual bits, NAND gates only)                                │
+├───────┼──────────────────┼───────────────────────┼──────────────────────────┤
+│       ▼                  ▼                       ▼                          │
+│  input-bits.txt    constants-bits.txt       nands.txt                       │
+│  (512 bits)        (2,306 bits)             (461K gates)                    │
+│  INPUT-W0-B0       K-0-B0, CONST-0/1        OUTPUT-W0-B0..W7-B31            │
+│  0 or 1            H-INIT-0-B0, etc.        label,inputA,inputB             │
+│       │                  │                       │                          │
+│       │                  │                       ▼                          │
+│       │                  │              ┌─────────────────┐                 │
+│       │                  │              │optimization-    │                 │
+│       │                  └─────────────►│pipeline.py      │                 │
+│       │                                 └────────┬────────┘                 │
+│       │                                          ▼                          │
+│       │                                 nands-optimized-final.txt           │
+│       │                                 (234K gates, 49% smaller)           │
+│       │                                          │                          │
+│       ▼                                          ▼                          │
+│  ┌────────────────────────────────────────────────────┐                     │
+│  │ eval-nands.py (combines input-bits + constants +   │                     │
+│  │                nands to compute SHA-256 hash)      │                     │
+│  └────────────────────────────────────────────────────┘                     │
+│                           │                                                 │
+│                           ▼                                                 │
+│                    256-bit hash output                                      │
+│                    (8 words × 32 bits)                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Step-by-Step Instructions
+
 ```bash
-# 1. Generate word-level circuit (one-time)
+# 1. Generate word-level circuit (one-time setup)
 python sha256_circuit_generator.py
+# Input:  (none - generates from SHA-256 spec)
+# Output: constants.txt (72 words), functions.txt (2,672 operations)
 
 # 2. Create input for your message
 python generate-input.py "hello"
+# Input:  ASCII string or hex
+# Output: input.txt (16 words with SHA-256 padding)
 
-# 3. Verify with word-level evaluator
+# 3. Verify with word-level evaluator (optional)
 python eval-functions.py
+# Input:  input.txt + constants.txt + functions.txt
 # Output: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
 
-# 4. Convert to bit-level representation
+# 4. Expand to bit-level representation
 python expand-constants.py
+# Input:  constants.txt (72 words)
+# Output: constants-bits.txt (2,306 bits including CONST-0, CONST-1)
+
 python expand-input.py
+# Input:  input.txt (16 words)
+# Output: input-bits.txt (512 bits)
+
+# 5. Convert functions to NAND gates
 python convert-to-nands.py
+# Input:  functions.txt (word-level operations)
+# Output: nands.txt (461,568 NAND gates)
 
-# 5. Verify with NAND evaluator
-python eval-nands.py
+# 6. Optimize the circuit (RECOMMENDED - saves 49% of gates)
+python optimization-pipeline.py -n nands.txt -o nands-optimized-final.txt -v
+# Input:  nands.txt + constants-bits.txt
+# Output: nands-optimized-final.txt (234,440 gates)
+
+# 7. Evaluate the optimized circuit
+python eval-nands.py -n nands-optimized-final.txt
+# Input:  input-bits.txt + constants-bits.txt + nands-optimized-final.txt
 # Output: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
 
-# 6. Optimize the circuit (optional but recommended)
-python xor-share-optimizer.py               # XOR chain sharing: 461K -> 457K gates
-python optimize-nands.py -i nands-xor-opt.txt -o nands-optimized.txt    # Basic: 457K -> 411K gates
-python advanced-optimizer.py -i nands-optimized.txt -o nands-advanced.txt # Advanced: 411K -> 259K gates
-python maj-rewriter.py -i nands-advanced.txt -o nands-maj.txt            # MAJ: 259K -> 245K gates
-python constant-propagation.py -i nands-maj.txt -o nands-final.txt       # Const prop: 245K -> 240K gates
+# 8. Verify correctness (tests multiple random inputs)
+python verify-circuit.py -n nands-optimized-final.txt
+# Input:  constants-bits.txt + nands-optimized-final.txt
+# Output: "All tests passed!" (compares against Python's hashlib.sha256)
+```
 
-# Alternative: Use iterative optimizer (runs all passes until convergence)
-python iterative-optimize.py -i nands-optimized.txt -o nands-final.txt
+### Quick Start (Minimal Steps)
 
-# 7. Verify optimized circuit
-python verify-circuit.py -n nands-final.txt
-python eval-nands.py -n nands-final.txt
-# Output: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+If you just want to compute a SHA-256 hash using the pre-optimized circuit:
 
-# 8. Verify against reference
-python -c "import hashlib; print(hashlib.sha256(b'hello').hexdigest())"
-# Output: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+```bash
+# Generate input bits for your message
+python generate-input.py "your message here"
+python expand-input.py
+
+# Evaluate using the optimized circuit (already included in repo)
+python eval-nands.py -n nands-optimized-final.txt
 ```
 
 ## Circuit Statistics
 
 | File | Lines | Description |
 |------|-------|-------------|
-| constants.txt | 72 | 64 K + 8 H_INIT |
-| functions.txt | 2,672 | Word-level operations (with native CH) |
-| constants-bits.txt | 2,306 | 72×32 + 2 special constants |
-| input-bits.txt | 512 | 16×32 bits |
-| nands.txt | 461,568 | NAND gates (unoptimized, with 4-NAND CH) |
-| nands-xor-opt.txt | 456,768 | After XOR chain sharing |
-| nands-maj.txt | 244,872 | After basic/advanced/MAJ optimizers |
-| nands-xor-final.txt | 239,865 | Fully optimized (~53.0% smaller) |
+| constants.txt | 72 | 64 round constants (K) + 8 initial hash values (H_INIT) |
+| functions.txt | 2,672 | Word-level operations (XOR, AND, ADD, ROTR, etc.) |
+| constants-bits.txt | 2,306 | 72×32 bits + CONST-0 + CONST-1 |
+| input-bits.txt | 512 | 16 words × 32 bits |
+| nands.txt | 461,568 | NAND gates (unoptimized) |
+| nands-optimized-final.txt | 234,440 | **Fully optimized (49.2% reduction)** |
 
 ### Gate Distribution (Optimized Circuit)
 
@@ -443,8 +458,8 @@ Analyze the layer structure and critical path depth of the circuit.
 
 ```bash
 python analyze-layers.py
-python analyze-layers.py -n nands-final.txt
-python analyze-layers.py -n nands-final.txt -v  # Verbose output
+python analyze-layers.py -n nands-optimized-final.txt
+python analyze-layers.py -n nands-optimized-final.txt -v  # Verbose output
 ```
 
 Computes layers where:
@@ -459,8 +474,8 @@ Generate an interactive HTML visualization of the circuit.
 
 ```bash
 python generate-visualization.py
-python generate-visualization.py -n nands-final.txt -o visualization.html
-python generate-visualization.py -n nands-final.txt -c constants-bits.txt
+python generate-visualization.py -n nands-optimized-final.txt -o visualization.html
+python generate-visualization.py -n nands-optimized-final.txt -c constants-bits.txt
 ```
 
 Creates a self-contained HTML file with embedded JavaScript that visualizes the circuit as a 2D pixel map:
@@ -487,15 +502,3 @@ Creates a self-contained HTML file with embedded JavaScript that visualizes the 
 - Fully self-contained (no external dependencies)
 
 Open the generated HTML file in any modern browser to explore the circuit structure interactively.
-
-### visualize-circuit.py
-
-Alternative pygame-based interactive visualizer (requires pygame installation).
-
-```bash
-pip install pygame
-python visualize-circuit.py
-python visualize-circuit.py -n nands-final.txt
-```
-
-Similar features to the HTML version but runs as a native application. Use the HTML version if pygame installation is problematic.

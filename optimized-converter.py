@@ -42,6 +42,11 @@ class OptimizedNandConverter:
         self.expr_cache[key] = label
         return label
 
+    def emit_forced(self, label, a, b):
+        """Emit a NAND gate with a specific label, bypassing CSE."""
+        self.nands.append((label, a, b))
+        return label
+
     def nand(self, prefix, a, b):
         """Create a NAND gate with auto-generated label and CSE."""
         key = (min(a, b), max(a, b))
@@ -213,8 +218,11 @@ class OptimizedNandConverter:
             # Map to expected output label
             out_bit = f"{out_label}-B{i}"
             if result != out_bit:
+                # Create NOT(NOT(result)) = result, but with specific label
+                # Use not_gate for first NOT (can use CSE)
                 t = self.not_gate(prefix, result)
-                self.emit(out_bit, t, t)
+                # Use emit_forced for second NOT to ensure we get the label we want
+                self.emit_forced(out_bit, t, t)
             out_bits.append(out_bit)
         self.register_word(out_label, out_bits)
 
@@ -228,8 +236,9 @@ class OptimizedNandConverter:
             result = self.or_gate(prefix, a_bits[i], b_bits[i])
             out_bit = f"{out_label}-B{i}"
             if result != out_bit:
+                # Create NOT(NOT(result)) = result, but with specific label
                 t = self.not_gate(prefix, result)
-                self.emit(out_bit, t, t)
+                self.emit_forced(out_bit, t, t)
             out_bits.append(out_bit)
         self.register_word(out_label, out_bits)
 
