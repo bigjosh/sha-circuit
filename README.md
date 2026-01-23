@@ -209,6 +209,23 @@ nodes[label] = not (nodes[a] and nodes[b])
 
 ...applied consecutively to each line in the `nands.txt` file so it is very easy to verify.
 
+#### xor-share-optimizer.py
+
+Specialized optimizer that identifies and optimizes XOR patterns with constant inputs.
+
+```bash
+python xor-share-optimizer.py
+python xor-share-optimizer.py -i nands.txt -o nands-xor-opt.txt
+```
+
+Recognizes and optimizes:
+- **XOR(CONST-0, x) = x**: Identity operation, eliminates 4 NANDs per occurrence
+- **XOR(CONST-1, x) = NOT(x)**: Reduces 4 NANDs to 1
+
+This optimization is particularly effective in SHA-256 because full adders start with carry=CONST-0, creating many XOR(0,x) patterns. Found 600 such patterns, saving ~4,800 gates before standard optimizations.
+
+**Important**: Run this optimizer BEFORE the standard optimization pipeline for best results.
+
 #### optimize-nands.py
 
 Basic NAND circuit optimizer with standard optimization passes.
@@ -315,16 +332,21 @@ Runs multiple test cases including edge cases (empty message, single char) and r
 
 Starting from 510,208 NAND gates (old) / 461,568 (with CH optimization), the optimization pipeline achieves:
 
-| Stage | Old Pipeline | New Pipeline (CH-opt) | Reduction |
-|-------|--------------|----------------------|-----------|
-| Original (nands.txt) | 510,208 | 461,568 | - |
-| Basic optimizer | 422,248 | 412,008 | 10% / 11% |
-| Advanced optimizer | 270,680 | 260,440 | 47% / 44% |
-| MAJ rewriter | 256,249 | 246,072 | 50% / 47% |
-| Constant propagation | 250,931 | **241,057** | 51% / **52.8%** |
+| Stage | Old Pipeline | CH-opt | CH+XOR-opt | Reduction |
+|-------|--------------|--------|------------|-----------|
+| Original (nands.txt) | 510,208 | 461,568 | 456,768 | - |
+| Basic optimizer | 422,248 | 412,008 | 410,808 | 10% / 11% / 11% |
+| Advanced optimizer | 270,680 | 260,440 | 259,240 | 47% / 44% / 43% |
+| MAJ rewriter | 256,249 | 246,072 | 244,872 | 50% / 47% / 47% |
+| Constant propagation | 250,931 | 241,057 | **239,865** | 51% / 52.8% / **53.0%** |
 
-**Best result: 241,057 gates (52.8% reduction from original 510,208)**
-**Total savings: 269,151 gates**
+**Best result: 239,865 gates (53.0% reduction from original 510,208)**
+**Total savings: 270,343 gates**
+
+The CH+XOR-opt pipeline includes:
+1. Native CH function (9→4 NANDs): -48,640 gates
+2. XOR chain sharing (XOR(0,x)=x): -4,800 gates
+3. Standard optimizations: -225,903 gates
 
 ### NAND Decomposition
 
@@ -343,6 +365,8 @@ Starting from 510,208 NAND gates (old) / 461,568 (with CH optimization), the opt
 **Full Adder Optimization**: The standard full adder implementation uses 15 NANDs (2 XORs + 2 ANDs + 1 OR). By reusing intermediate NAND results from the XOR gates, the optimized implementation reduces this to 13 NANDs while computing the same function. This saves 38,400 gates in the unoptimized circuit (7.5%). After the complete optimization pipeline, final gate counts are nearly identical (~251K gates) because downstream optimizations (CSE, constant propagation) can largely compensate for full adder inefficiencies.
 
 **CH Function Optimization**: The CH (choice) function `CH(e,f,g) = (e AND f) XOR ((NOT e) AND g)` is equivalent to a 2:1 multiplexer: "if e then f else g". The standard decomposition uses 9 NANDs, but recognizing it as a MUX allows a direct 4-NAND implementation. This optimization is implemented natively in the circuit generator and saves 48,640 gates in the unoptimized circuit (9.5%), with 9,874 gates remaining after the full optimization pipeline (3.9% additional reduction).
+
+**XOR Chain Sharing**: Recognizes XOR patterns with constant inputs for specialized optimization. `XOR(CONST-0, x) = x` is the identity operation, eliminating all 4 NANDs. `XOR(CONST-1, x) = NOT(x)` reduces 4 NANDs to 1. In SHA-256, full adders start with carry=0, creating 600 XOR(0,x) patterns throughout the circuit. This optimization eliminates 4,800 gates in the unoptimized circuit (1.0%), with 1,192 gates remaining after the full optimization pipeline (0.5% additional reduction). Total improvement: 53.0% reduction from the original 510,208 gates.
 
 ## Complete Workflow
 
@@ -367,10 +391,11 @@ python eval-nands.py
 # Output: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
 
 # 6. Optimize the circuit (optional but recommended)
-python optimize-nands.py                    # Basic optimizer: 510K -> 422K gates
-python advanced-optimizer.py                # Advanced optimizer: 422K -> 270K gates
-python maj-rewriter.py                      # MAJ rewriter: 270K -> 256K gates
-python constant-propagation.py              # Constant propagation: 256K -> 251K gates
+python xor-share-optimizer.py               # XOR chain sharing: 461K -> 457K gates
+python optimize-nands.py -i nands-xor-opt.txt -o nands-optimized.txt    # Basic: 457K -> 411K gates
+python advanced-optimizer.py -i nands-optimized.txt -o nands-advanced.txt # Advanced: 411K -> 259K gates
+python maj-rewriter.py -i nands-advanced.txt -o nands-maj.txt            # MAJ: 259K -> 245K gates
+python constant-propagation.py -i nands-maj.txt -o nands-final.txt       # Const prop: 245K -> 240K gates
 
 # Alternative: Use iterative optimizer (runs all passes until convergence)
 python iterative-optimize.py -i nands-optimized.txt -o nands-final.txt
@@ -394,8 +419,9 @@ python -c "import hashlib; print(hashlib.sha256(b'hello').hexdigest())"
 | constants-bits.txt | 2,306 | 72×32 + 2 special constants |
 | input-bits.txt | 512 | 16×32 bits |
 | nands.txt | 461,568 | NAND gates (unoptimized, with 4-NAND CH) |
-| nands-optimized.txt | 246,072 | After basic/advanced/MAJ optimizers |
-| nands-final-ch4.txt | 241,057 | Fully optimized (~52.8% smaller) |
+| nands-xor-opt.txt | 456,768 | After XOR chain sharing |
+| nands-maj.txt | 244,872 | After basic/advanced/MAJ optimizers |
+| nands-xor-final.txt | 239,865 | Fully optimized (~53.0% smaller) |
 
 ### Gate Distribution (Optimized Circuit)
 
