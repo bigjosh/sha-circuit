@@ -54,19 +54,24 @@ def save_circuit(filename, gates):
             f.write(f"{label},{a},{b}\n")
 
 
-def load_constants(filename="constants-bits.txt"):
-    """Load constants."""
-    const_values = {'CONST-0': 0, 'CONST-1': 1}
-    try:
-        with open(filename) as f:
-            for line in f:
-                if line.strip():
-                    parts = line.strip().split(',')
-                    if len(parts) >= 2:
-                        const_values[parts[0]] = int(parts[1])
-    except FileNotFoundError:
-        pass
-    return const_values
+def load_inputs(filenames):
+    """Load input values from one or more input files.
+
+    Each file should have lines in the format: label,value
+    where value is 0 or 1.
+    """
+    values = {'CONST-0': 0, 'CONST-1': 1}
+    for filename in filenames:
+        try:
+            with open(filename) as f:
+                for line in f:
+                    if line.strip():
+                        parts = line.strip().split(',')
+                        if len(parts) >= 2:
+                            values[parts[0]] = int(parts[1])
+        except FileNotFoundError:
+            pass
+    return values
 
 
 def simulate_circuit(gates, input_values, const_values):
@@ -83,12 +88,12 @@ def simulate_circuit(gates, input_values, const_values):
     return values
 
 
-def verify_circuit_file(nands_file, constants_file="constants-bits.txt", num_tests=5):
+def verify_circuit_file(nands_file, input_files, num_tests=5):
     """Verify circuit using the external verify-circuit.py script."""
-    result = subprocess.run(
-        [sys.executable, "verify-circuit.py", "-n", nands_file, "-t", str(num_tests)],
-        capture_output=True, text=True
-    )
+    cmd = [sys.executable, "verify-circuit.py", "-n", nands_file, "-t", str(num_tests)]
+    for input_file in input_files:
+        cmd.extend(["-i", input_file])
+    result = subprocess.run(cmd, capture_output=True, text=True)
     success = result.returncode == 0
     output = result.stdout + result.stderr
     return success, output.strip()
@@ -472,8 +477,8 @@ def main():
     parser = argparse.ArgumentParser(description="SHA-256 NAND Circuit Optimization Pipeline")
     parser.add_argument("--functions", "-f", default="functions.txt",
                         help="Input functions file")
-    parser.add_argument("--constants", "-c", default="constants-bits.txt",
-                        help="Constants bits file")
+    parser.add_argument("--inputs", "-i", action="append", default=None,
+                        help="Input file(s) containing constant bit values (can be specified multiple times)")
     parser.add_argument("--input-nands", "-n", default=None,
                         help="Skip conversion, start from existing NAND file")
     parser.add_argument("--output", "-o", default="nands-optimized-final.txt",
@@ -488,10 +493,16 @@ def main():
     print("SHA-256 NAND Circuit Optimization Pipeline")
     print("=" * 60)
 
-    # Load constants
-    print(f"\nLoading constants from {args.constants}...")
-    const_values = load_constants(args.constants)
-    print(f"  Loaded {len(const_values)} constants")
+    # Determine input files
+    if args.inputs:
+        input_files = args.inputs
+    else:
+        input_files = ["constants-bits.txt"]
+
+    # Load inputs (constants)
+    print(f"\nLoading inputs from {input_files}...")
+    const_values = load_inputs(input_files)
+    print(f"  Loaded {len(const_values)} values")
 
     # Get initial circuit
     if args.input_nands:
@@ -537,7 +548,7 @@ def main():
     # Verify if requested
     if args.verify:
         print(f"\nVerifying circuit ({args.tests} tests)...")
-        success, output = verify_circuit_file(args.output, args.constants, args.tests)
+        success, output = verify_circuit_file(args.output, input_files, args.tests)
         for line in output.split('\n'):
             if line.strip():
                 print(f"  {line}")

@@ -11,6 +11,7 @@ This computes the critical path depth and shows gate distribution across layers.
 Usage:
     python analyze-layers.py
     python analyze-layers.py -n nands-optimized.txt
+    python analyze-layers.py -i constants-bits.txt -i input-bits.txt
     python analyze-layers.py -n nands-ch-opt.txt -v  # verbose output
 """
 
@@ -18,39 +19,51 @@ import argparse
 from collections import defaultdict
 
 
-def load_constants(filename='constants-bits.txt'):
-    """Load constant bit labels."""
-    constants = set()
-    constants.add('CONST-0')
-    constants.add('CONST-1')
+def load_inputs_from_files(filenames):
+    """Load input labels from one or more input files.
 
-    try:
-        with open(filename, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    parts = line.split(',')
-                    if len(parts) >= 1:
-                        constants.add(parts[0])
-    except FileNotFoundError:
-        # Generate expected constant labels
-        for i in range(64):
-            for b in range(32):
-                constants.add(f'K-{i}-B{b}')
-        for i in range(8):
-            for b in range(32):
-                constants.add(f'H-INIT-{i}-B{b}')
+    Each file should have lines in the format: label,value
+    """
+    labels = set()
+    labels.add('CONST-0')
+    labels.add('CONST-1')
 
-    return constants
+    for filename in filenames:
+        try:
+            with open(filename, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        parts = line.split(',')
+                        if len(parts) >= 1:
+                            labels.add(parts[0])
+        except FileNotFoundError:
+            print(f"Warning: Could not find {filename}")
+            pass
+
+    return labels
 
 
-def load_inputs():
-    """Generate input bit labels."""
-    inputs = set()
+def generate_default_inputs():
+    """Generate expected input/constant labels when no input files specified."""
+    labels = set()
+    labels.add('CONST-0')
+    labels.add('CONST-1')
+
+    # Constants
+    for i in range(64):
+        for b in range(32):
+            labels.add(f'K-{i}-B{b}')
+    for i in range(8):
+        for b in range(32):
+            labels.add(f'H-INIT-{i}-B{b}')
+
+    # Inputs
     for w in range(16):
         for b in range(32):
-            inputs.add(f'INPUT-W{w}-B{b}')
-    return inputs
+            labels.add(f'INPUT-W{w}-B{b}')
+
+    return labels
 
 
 def load_circuit(filename):
@@ -194,8 +207,8 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze circuit layer structure")
     parser.add_argument("--nands", "-n", default="nands-ch-opt.txt",
                         help="NAND circuit file")
-    parser.add_argument("--constants", "-c", default="constants-bits.txt",
-                        help="Constants file")
+    parser.add_argument("--inputs", "-i", action="append", default=None,
+                        help="Input file(s) containing bit values (can be specified multiple times)")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Show detailed per-layer counts")
     args = parser.parse_args()
@@ -204,11 +217,16 @@ def main():
     gates = load_circuit(args.nands)
     print(f"  Loaded {len(gates):,} gates")
 
-    print(f"Loading constants and inputs...")
-    constants = load_constants(args.constants)
-    inputs = load_inputs()
-    layer0 = constants | inputs
-    print(f"  Layer 0 has {len(layer0):,} signals (inputs + constants)")
+    print(f"Loading inputs...")
+    if args.inputs:
+        layer0 = load_inputs_from_files(args.inputs)
+    else:
+        # Default: try to load from default files, fall back to generating labels
+        try:
+            layer0 = load_inputs_from_files(["constants-bits.txt", "input-bits.txt"])
+        except:
+            layer0 = generate_default_inputs()
+    print(f"  Layer 0 has {len(layer0):,} signals (inputs)")
 
     print(f"\nComputing layers...")
     layers, layer_counts, max_layer = compute_layers(gates, layer0)

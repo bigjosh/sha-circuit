@@ -197,8 +197,9 @@ Evaluate the NAND circuit and output the hash.
 
 ```bash
 python eval-nands.py
-python eval-nands.py -d ./circuit_dir
-python eval-nands.py -n nands-optimized-final.txt   # Use a different NAND file
+python eval-nands.py -i input-bits.txt -i constants-bits.txt
+python eval-nands.py -i input-bits.txt -i constants-bits.txt -n nands-optimized-final.txt
+python eval-nands.py -d ./circuit_dir   # Uses default files in directory
 ```
 
 NOTE: Importantly, this program is essentially just the single expression....
@@ -220,13 +221,13 @@ python optimization-pipeline.py -n nands.txt -o nands-optimized-final.txt -v
 # From functions.txt (includes conversion):
 python optimization-pipeline.py -f functions.txt -o nands-optimized-final.txt -v
 
-# With custom constants and more verification tests:
-python optimization-pipeline.py -n nands.txt -c constants-bits.txt -o output.txt -v -t 10
+# With custom input files and more verification tests:
+python optimization-pipeline.py -n nands.txt -i constants-bits.txt -o output.txt -v -t 10
 ```
 
 **Input/Output:**
 - **Input**: Either `nands.txt` (bit-level NAND gates) OR `functions.txt` (word-level functions)
-- **Constants**: Reads `constants-bits.txt` for constant values
+- **Input files**: Reads from `-i` specified files for constant/input values (default: `constants-bits.txt`)
 - **Output**: Optimized `nands.txt` file with `OUTPUT-W{0-7}-B{0-31}` labels
 
 **Optimization Passes** (applied iteratively until convergence):
@@ -265,6 +266,7 @@ Verification tool that tests the NAND circuit against Python's reference SHA-256
 
 ```bash
 python verify-circuit.py -n nands-optimized-final.txt
+python verify-circuit.py -n nands-optimized-final.txt -i constants-bits.txt
 python verify-circuit.py -n nands-optimized-final.txt --tests 20  # More random tests
 python verify-circuit.py -n nands-optimized-final.txt -v          # Verbose output
 ```
@@ -459,6 +461,7 @@ Analyze the layer structure and critical path depth of the circuit.
 ```bash
 python analyze-layers.py
 python analyze-layers.py -n nands-optimized-final.txt
+python analyze-layers.py -n nands-optimized-final.txt -i constants-bits.txt -i input-bits.txt
 python analyze-layers.py -n nands-optimized-final.txt -v  # Verbose output
 ```
 
@@ -475,7 +478,7 @@ Generate an interactive HTML visualization of the circuit.
 ```bash
 python generate-visualization.py
 python generate-visualization.py -n nands-optimized-final.txt -o visualization.html
-python generate-visualization.py -n nands-optimized-final.txt -c constants-bits.txt
+python generate-visualization.py -n nands-optimized-final.txt -i constants-bits.txt -i input-bits.txt
 ```
 
 Creates a self-contained HTML file with embedded JavaScript that visualizes the circuit as a 2D pixel map:

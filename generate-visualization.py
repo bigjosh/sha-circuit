@@ -10,31 +10,38 @@ import json
 from collections import defaultdict
 
 
-def load_layer0(constants_file='constants-bits.txt'):
-    """Load inputs and constants."""
+def load_layer0(input_files=None):
+    """Load inputs and constants from input files."""
     layer0 = set()
     layer0.add('CONST-0')
     layer0.add('CONST-1')
 
-    try:
-        with open(constants_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    parts = line.split(',')
-                    if len(parts) >= 1:
-                        layer0.add(parts[0])
-    except FileNotFoundError:
+    if input_files is None:
+        input_files = ['constants-bits.txt']
+
+    for input_file in input_files:
+        try:
+            with open(input_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        parts = line.split(',')
+                        if len(parts) >= 1:
+                            layer0.add(parts[0])
+        except FileNotFoundError:
+            pass
+
+    # If no input files loaded, generate defaults
+    if len(layer0) <= 2:
         for i in range(64):
             for b in range(32):
                 layer0.add(f'K-{i}-B{b}')
         for i in range(8):
             for b in range(32):
                 layer0.add(f'H-INIT-{i}-B{b}')
-
-    for w in range(16):
-        for b in range(32):
-            layer0.add(f'INPUT-W{w}-B{b}')
+        for w in range(16):
+            for b in range(32):
+                layer0.add(f'INPUT-W{w}-B{b}')
 
     return layer0
 
@@ -473,14 +480,16 @@ def main():
     parser = argparse.ArgumentParser(description="Generate HTML circuit visualization")
     parser.add_argument("--nands", "-n", default="ga-nands.txt",
                         help="NAND circuit file")
-    parser.add_argument("--constants", "-c", default="constants-bits.txt",
-                        help="Constants file")
+    parser.add_argument("--inputs", "-i", action="append", default=None,
+                        help="Input file(s) containing bit values (can be specified multiple times)")
     parser.add_argument("--output", "-o", default="visualization.html",
                         help="Output HTML file")
     args = parser.parse_args()
 
     print(f"Loading circuit from {args.nands}...")
-    layer0 = load_layer0(args.constants)
+    # Use provided input files or default to constants-bits.txt
+    input_files = args.inputs if args.inputs else ["constants-bits.txt"]
+    layer0 = load_layer0(input_files)
     gates, dependencies, dependents = load_circuit(args.nands)
     print(f"  Loaded {len(gates):,} gates")
 

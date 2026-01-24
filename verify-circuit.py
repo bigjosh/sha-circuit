@@ -7,6 +7,7 @@ Tests with multiple random inputs to ensure circuit produces correct outputs.
 Usage:
     python verify-circuit.py
     python verify-circuit.py -n nands-optimized.txt
+    python verify-circuit.py -i constants-bits.txt
     python verify-circuit.py --tests 10
 """
 
@@ -16,17 +17,27 @@ import os
 import random
 
 
-def load_circuit(nands_file, constants_file):
-    """Load circuit definition."""
-    nodes = {}  # label -> (type, data)
+def load_inputs(filepaths):
+    """Load input values from one or more input files.
 
-    # Load constants
-    with open(constants_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                label, value = line.split(',')
-                nodes[label] = ('const', int(value))
+    Each file should have lines in the format: label,value
+    where value is 0 or 1.
+    """
+    nodes = {}
+    for filepath in filepaths:
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    label, value = line.split(',')
+                    nodes[label] = ('const', int(value))
+    return nodes
+
+
+def load_circuit(nands_file, input_files):
+    """Load circuit definition."""
+    # Load all inputs (constants, etc.)
+    nodes = load_inputs(input_files)
 
     # Load NAND gates
     gates = []
@@ -116,17 +127,24 @@ def run_test(nodes, gates, message_bytes, verbose=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Verify NAND circuit correctness")
-    parser.add_argument("--dir", "-d", default=".", help="Directory containing circuit files")
+    parser.add_argument("--inputs", "-i", action="append", default=None,
+                        help="Input file(s) containing constant bit values (can be specified multiple times)")
+    parser.add_argument("--dir", "-d", default=".", help="Directory containing circuit files (used if -i not specified)")
     parser.add_argument("--nands", "-n", default=None, help="Path to NAND file")
     parser.add_argument("--tests", "-t", type=int, default=5, help="Number of random tests")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = parser.parse_args()
 
     nands_path = args.nands if args.nands else os.path.join(args.dir, "nands.txt")
-    constants_path = os.path.join(args.dir, "constants-bits.txt")
+
+    # Determine input files
+    if args.inputs:
+        input_files = args.inputs
+    else:
+        input_files = [os.path.join(args.dir, "constants-bits.txt")]
 
     print(f"Loading circuit from {nands_path}...")
-    nodes, gates = load_circuit(nands_path, constants_path)
+    nodes, gates = load_circuit(nands_path, input_files)
     print(f"  {len(gates)} NAND gates loaded")
 
     # Run tests
