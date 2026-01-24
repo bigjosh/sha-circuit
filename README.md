@@ -2,7 +2,7 @@
 
 A complete implementation of SHA-256 as a circuit of NAND gates.
 
-**Result: 230,559 NAND gates** (22% reduction from initial 295,200)
+**Result: 230,549 NAND gates** (22% reduction from initial 295,200)
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ python eval-nands.py -n nands-optimized-final.txt
 [1] sha256_circuit_generator.py  → functions.txt (2,416 ops), constants.txt (72 words)
 [2] expand-words.py -c           → constants-bits.txt (2,306 bits)
 [3] optimized-converter.py       → nands.txt (295,200 gates)
-[4] optimize-nands.py            → nands-optimized-final.txt (230,559 gates)
+[4] optimize-nands.py            → nands-optimized-final.txt (230,549 gates)
 ```
 
 ### Input Generation
@@ -172,7 +172,7 @@ The optimizer applies these passes iteratively until convergence:
 | Stage | Gates | Reduction |
 |-------|-------|-----------|
 | Initial (optimized-converter.py) | 295,200 | - |
-| After optimization | 230,559 | 22% |
+| After optimization | 230,549 | 22% |
 
 ## Circuit Statistics
 
@@ -183,7 +183,7 @@ The optimizer applies these passes iteratively until convergence:
 | constants-bits.txt | 2,306 bits |
 | input-bits.txt | 512 bits |
 | nands.txt | 295,200 gates |
-| **nands-optimized-final.txt** | **230,559 gates** |
+| **nands-optimized-final.txt** | **230,549 gates** |
 
 ## Verification
 

@@ -191,7 +191,7 @@ def rename_outputs(gates):
 
 def optimize_dead_code(gates):
     """Remove gates not needed for outputs."""
-    outputs = {label for label, _, _ in gates if label.startswith("OUTPUT-") or label.startswith("FINAL-H")}
+    outputs = {label for label, _, _ in gates if is_output_label(label)}
     gate_map = {label: (a, b) for label, a, b in gates}
 
     needed = set(outputs)
