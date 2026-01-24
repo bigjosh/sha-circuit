@@ -2,21 +2,38 @@
 """
 SHA-256 NAND Circuit Optimization Pipeline
 
-A comprehensive workflow that takes constants-bits.txt and the circuit definition,
-applies all optimization strategies, and produces an optimized nands-bits.txt file.
+The recommended workflow for generating the most optimized circuit:
 
-Optimization stages:
-1. Initial conversion with optimized primitives (MAJ=6, CH=9, Full Adder=13)
-2. Basic optimizations (CSE, constant folding, dead code elimination)
-3. Advanced pattern matching optimizations
-4. XOR(0, x) = x sharing optimization
-5. XOR(1, x) = NOT(x) optimization
-6. Identity pattern elimination: NOT(NOT(x)) = x
-7. Constant propagation
-8. Iterative refinement until convergence
+    python optimization-pipeline.py -v
+
+This will:
+1. Convert functions.txt -> NANDs using optimized primitives (MAJ=6, CH=4, FA=13)
+2. Apply all optimization passes iteratively until convergence
+3. Verify the result against reference SHA-256
+4. Output to nands-optimized-final.txt
+
+Optimization passes:
+- CSE: Common subexpression elimination
+- Share inverters: Merge duplicate NOT gates
+- NAND to identity: Merge equivalent NOT gates (NAND(x,x) and NAND(x,1))
+- XOR chain: Deduplicate XOR patterns with same inputs
+- XOR(0, x) = x: Remove identity XOR operations
+- XOR(1, x) = NOT(x): Simplify XOR with constant 1
+- Algebraic: NAND(x, NOT(x)) = 1
+- Constant folding: Evaluate gates with known inputs (supports 0, 1, X)
+- Dead code elimination: Remove gates not needed for outputs
+- Identity patterns: NOT(NOT(x)) = x
+- Double NOT: More aggressive double negation elimination
+- AND(x,x) = x: Simplify redundant AND operations
+- OR(x,x) = x: Simplify redundant OR operations
+- Cleanup copies: Remove unnecessary copy chains
+
+Supports three-valued logic (0, 1, X) where X = unbound/unknown.
 
 Usage:
-    python optimization-pipeline.py -f functions.txt -c constants-bits.txt -o nands-optimized.txt
+    python optimization-pipeline.py -v                    # Best flow: functions.txt -> optimized
+    python optimization-pipeline.py -n nands.txt -v       # Optimize existing NAND file
+    python optimization-pipeline.py -f functions.txt -i constants-bits.txt -o output.txt -v
 """
 
 import argparse
@@ -58,6 +75,21 @@ def save_circuit(filename, gates):
 FALSE = 0
 TRUE = 1
 UNKNOWN = 'X'
+
+
+def is_output_label(label):
+    """Check if a label is a circuit output (should not be replaced/deleted)."""
+    if label.startswith("OUTPUT-"):
+        return True
+    # Also check for FINAL-H*-ADD-B* format (before renaming)
+    # Output format: FINAL-H0-ADD-B0 through FINAL-H7-ADD-B31
+    # Intermediate format: FINAL-H0-ADD-B0-T123
+    if label.startswith("FINAL-H") and "-ADD-B" in label:
+        # Check it's not an intermediate (has -T suffix)
+        parts = label.split("-ADD-B")
+        if len(parts) == 2 and "-T" not in parts[1]:
+            return True
+    return False
 
 
 def parse_value(value_str):
@@ -125,21 +157,28 @@ def verify_circuit_file(nands_file, input_files, num_tests=5):
 # ============== OPTIMIZATION PASSES ==============
 
 def optimize_cse(gates):
-    """Common Subexpression Elimination."""
+    """Common Subexpression Elimination.
+
+    Never replace output labels - they are the circuit's actual outputs.
+    """
     seen = {}  # (min(a,b), max(a,b)) -> label
     replacements = {}
     optimized = []
 
     for label, a, b in gates:
-        key = (min(a, b), max(a, b))
+        # Apply replacements to inputs first
+        a_new = replacements.get(a, a)
+        b_new = replacements.get(b, b)
 
-        if key in seen:
+        key = (min(a_new, b_new), max(a_new, b_new))
+
+        if key in seen and not is_output_label(label):
+            # This is a duplicate - replace with existing
             replacements[label] = seen[key]
         else:
-            seen[key] = label
-            # Apply replacements to inputs
-            a_new = replacements.get(a, a)
-            b_new = replacements.get(b, b)
+            # Keep this gate (either new expression or it's an output)
+            if key not in seen:
+                seen[key] = label
             optimized.append((label, a_new, b_new))
 
     return optimized
@@ -276,7 +315,7 @@ def optimize_identity_patterns(gates):
             continue
 
         # Found: label = NOT(NOT(x)) = x
-        if not label.startswith("OUTPUT-"):
+        if not is_output_label(label):
             replacements[label] = x
 
     if not replacements:
@@ -352,9 +391,9 @@ def optimize_xor_with_zero(gates):
         xor_inputs = identify_xor(label)
         if xor_inputs:
             a, b = xor_inputs
-            if a == 'CONST-0' and not label.startswith("OUTPUT-"):
+            if a == 'CONST-0' and not is_output_label(label):
                 replacements[label] = b
-            elif b == 'CONST-0' and not label.startswith("OUTPUT-"):
+            elif b == 'CONST-0' and not is_output_label(label):
                 replacements[label] = a
 
     if not replacements:
@@ -455,6 +494,485 @@ def optimize_xor_with_one(gates):
     return optimized
 
 
+def optimize_share_inverters(gates):
+    """Share NOT gates computing the same thing.
+
+    If multiple gates compute NOT(x), keep only one and redirect others.
+    NOT is implemented as NAND(x, x) or NAND(x, CONST-1).
+    """
+    gate_map = {label: (a, b) for label, a, b in gates}
+
+    # Find all NOT gates and group by what they invert
+    not_of = {}  # input_signal -> [labels that are NOT of it]
+    for label, a, b in gates:
+        if a == b:
+            # NAND(x, x) = NOT(x)
+            not_of.setdefault(a, []).append(label)
+        elif a == 'CONST-1':
+            # NAND(CONST-1, x) = NOT(x)
+            not_of.setdefault(b, []).append(label)
+        elif b == 'CONST-1':
+            # NAND(x, CONST-1) = NOT(x)
+            not_of.setdefault(a, []).append(label)
+
+    # For each input with multiple NOT gates, keep one canonical version
+    replacements = {}
+    for input_sig, labels in not_of.items():
+        if len(labels) > 1:
+            # Pick canonical (prefer non-output)
+            canonical = None
+            for l in labels:
+                if not l.startswith("OUTPUT-"):
+                    canonical = l
+                    break
+            if canonical is None:
+                canonical = labels[0]
+
+            for other in labels:
+                if other != canonical and not other.startswith("OUTPUT-"):
+                    replacements[other] = canonical
+
+    if not replacements:
+        return gates
+
+    # Apply replacements
+    def resolve(label):
+        seen = set()
+        while label in replacements:
+            if label in seen:
+                break
+            seen.add(label)
+            label = replacements[label]
+        return label
+
+    optimized = []
+    for label, a, b in gates:
+        if label in replacements:
+            continue
+        a_new = resolve(a)
+        b_new = resolve(b)
+        optimized.append((label, a_new, b_new))
+
+    return optimized
+
+
+def optimize_algebraic(gates):
+    """Apply algebraic simplifications.
+
+    NAND(x, NOT(x)) = 1 (always true, since x AND NOT(x) = 0)
+    """
+    gate_map = {label: (a, b) for label, a, b in gates}
+
+    # Find NOT gates
+    not_of = {}  # label -> what it's the NOT of
+    for label, a, b in gates:
+        if a == b:
+            not_of[label] = a
+        elif a == 'CONST-1':
+            not_of[label] = b
+        elif b == 'CONST-1':
+            not_of[label] = a
+
+    replacements = {}
+    for label, a, b in gates:
+        # Check NAND(x, NOT(x)) = 1
+        if a in not_of and not_of[a] == b:
+            if not is_output_label(label):
+                replacements[label] = 'CONST-1'
+        elif b in not_of and not_of[b] == a:
+            if not is_output_label(label):
+                replacements[label] = 'CONST-1'
+
+    if not replacements:
+        return gates
+
+    def resolve(label):
+        seen = set()
+        while label in replacements:
+            if label in seen:
+                break
+            seen.add(label)
+            label = replacements[label]
+        return label
+
+    optimized = []
+    for label, a, b in gates:
+        if label in replacements:
+            continue
+        a_new = resolve(a)
+        b_new = resolve(b)
+        optimized.append((label, a_new, b_new))
+
+    return optimized
+
+
+def optimize_and_simplification(gates):
+    """Optimize AND(x, x) = x patterns.
+
+    AND is: NOT(NAND(a,b)) = NAND(NAND(a,b), NAND(a,b))
+    If a == b, then NAND(a,a) = NOT(a), and AND(a,a) = NOT(NOT(a)) = a
+
+    Pattern: NAND(t, t) where t = NAND(x, x)
+    This is NOT(NOT(x)) = x
+    """
+    gate_map = {label: (a, b) for label, a, b in gates}
+
+    replacements = {}
+    for label, a, b in gates:
+        if a == b and a in gate_map:
+            inner_a, inner_b = gate_map[a]
+            if inner_a == inner_b:
+                # AND(x, x) = NOT(NOT(x)) = x
+                if not is_output_label(label):
+                    replacements[label] = inner_a
+
+    if not replacements:
+        return gates
+
+    def resolve(label):
+        seen = set()
+        while label in replacements:
+            if label in seen:
+                break
+            seen.add(label)
+            label = replacements[label]
+        return label
+
+    optimized = []
+    for label, a, b in gates:
+        if label in replacements:
+            continue
+        a_new = resolve(a)
+        b_new = resolve(b)
+        optimized.append((label, a_new, b_new))
+
+    return optimized
+
+
+def optimize_or_simplification(gates):
+    """Recognize OR gates and simplify OR(x, x) = x.
+
+    OR(a,b) = NAND(NOT(a), NOT(b)) = NAND(NAND(a,a), NAND(b,b))
+    If a == b, then OR(a,a) = a
+    """
+    gate_map = {label: (a, b) for label, a, b in gates}
+
+    replacements = {}
+    for label, a, b in gates:
+        if a in gate_map and b in gate_map:
+            a_inner_a, a_inner_b = gate_map[a]
+            b_inner_a, b_inner_b = gate_map[b]
+
+            # Check if both inputs are NOT gates (NAND(x,x))
+            if a_inner_a == a_inner_b and b_inner_a == b_inner_b:
+                # This is OR(a_inner_a, b_inner_a)
+                if a_inner_a == b_inner_a:
+                    # OR(x, x) = x
+                    if not is_output_label(label):
+                        replacements[label] = a_inner_a
+
+    if not replacements:
+        return gates
+
+    def resolve(label):
+        seen = set()
+        while label in replacements:
+            if label in seen:
+                break
+            seen.add(label)
+            label = replacements[label]
+        return label
+
+    optimized = []
+    for label, a, b in gates:
+        if label in replacements:
+            continue
+        a_new = resolve(a)
+        b_new = resolve(b)
+        optimized.append((label, a_new, b_new))
+
+    return optimized
+
+
+def optimize_double_not(gates):
+    """More aggressive double negation elimination.
+
+    Pattern: NOT(NOT(x)) = x where NOT can be:
+    - NAND(x, x)
+    - NAND(x, CONST-1)
+    - NAND(CONST-1, x)
+    """
+    gate_map = {label: (a, b) for label, a, b in gates}
+
+    # Find all NOT gates (any form)
+    not_gates = {}  # label -> what it's NOT of
+    for label, a, b in gates:
+        if a == b:
+            not_gates[label] = a
+        elif a == 'CONST-1':
+            not_gates[label] = b
+        elif b == 'CONST-1':
+            not_gates[label] = a
+
+    replacements = {}
+    for label, a, b in gates:
+        # Check if this gate is a NOT
+        inner = None
+        if a == b:
+            inner = a
+        elif a == 'CONST-1':
+            inner = b
+        elif b == 'CONST-1':
+            inner = a
+
+        if inner and inner in not_gates:
+            # This is NOT(NOT(original))
+            original = not_gates[inner]
+            if not is_output_label(label):
+                replacements[label] = original
+
+    if not replacements:
+        return gates
+
+    def resolve(label):
+        seen = set()
+        while label in replacements:
+            if label in seen:
+                break
+            seen.add(label)
+            label = replacements[label]
+        return label
+
+    optimized = []
+    for label, a, b in gates:
+        if label in replacements:
+            continue
+        a_new = resolve(a)
+        b_new = resolve(b)
+        optimized.append((label, a_new, b_new))
+
+    return optimized
+
+
+def optimize_xor_chain(gates):
+    """Recognize and deduplicate XOR patterns.
+
+    XOR(a,b) in NAND:
+      t = NAND(a,b)
+      x = NAND(a,t)
+      y = NAND(b,t)
+      out = NAND(x,y)
+
+    If multiple XOR gates compute the same thing, replace duplicates.
+    """
+    gate_map = {label: (a, b) for label, a, b in gates}
+
+    def identify_xor(label):
+        """Return (a, b) if label is XOR(a,b), else None."""
+        if label not in gate_map:
+            return None
+        x, y = gate_map[label]
+        if x not in gate_map or y not in gate_map:
+            return None
+
+        x_a, x_b = gate_map[x]
+        y_a, y_b = gate_map[y]
+
+        # Find shared input t
+        t = None
+        a, b = None, None
+
+        if x_b == y_b:
+            t, a, b = x_b, x_a, y_a
+        elif x_b == y_a:
+            t, a, b = x_b, x_a, y_b
+        elif x_a == y_b:
+            t, a, b = x_a, x_b, y_a
+        elif x_a == y_a:
+            t, a, b = x_a, x_b, y_b
+        else:
+            return None
+
+        if t not in gate_map:
+            return None
+
+        t_a, t_b = gate_map[t]
+        if {t_a, t_b} == {a, b}:
+            return (min(a, b), max(a, b))  # Canonicalize
+        return None
+
+    # Find all XOR outputs
+    xor_outputs = {}  # label -> (a, b) canonical
+    for label, _, _ in gates:
+        xor_inputs = identify_xor(label)
+        if xor_inputs:
+            xor_outputs[label] = xor_inputs
+
+    # Group by inputs to find duplicates
+    xor_by_inputs = {}  # (a, b) -> [labels]
+    for label, inputs in xor_outputs.items():
+        xor_by_inputs.setdefault(inputs, []).append(label)
+
+    # Replace duplicates with canonical version
+    replacements = {}
+    for inputs, labels in xor_by_inputs.items():
+        if len(labels) > 1:
+            # Pick canonical (prefer non-output)
+            canonical = None
+            for l in labels:
+                if not is_output_label(l):
+                    canonical = l
+                    break
+            if canonical is None:
+                canonical = labels[0]
+
+            for other in labels:
+                if other != canonical and not is_output_label(other):
+                    replacements[other] = canonical
+
+    if not replacements:
+        return gates
+
+    def resolve(label):
+        seen = set()
+        while label in replacements:
+            if label in seen:
+                break
+            seen.add(label)
+            label = replacements[label]
+        return label
+
+    optimized = []
+    for label, a, b in gates:
+        if label in replacements:
+            continue
+        a_new = resolve(a)
+        b_new = resolve(b)
+        optimized.append((label, a_new, b_new))
+
+    return optimized
+
+
+def optimize_nand_to_identity(gates):
+    """Merge equivalent NOT gates.
+
+    NOT can be computed as:
+    - NAND(x, x)
+    - NAND(x, CONST-1)
+    - NAND(CONST-1, x)
+
+    If multiple gates compute NOT(x) using different forms, merge them.
+    """
+    gate_map = {label: (a, b) for label, a, b in gates}
+
+    # Find all NOT gates and what they invert
+    not_of = {}  # label -> what it's the NOT of
+    for label, a, b in gates:
+        if a == b:
+            not_of[label] = a
+        elif a == 'CONST-1':
+            not_of[label] = b
+        elif b == 'CONST-1':
+            not_of[label] = a
+
+    # Group by what they invert
+    inverts = {}  # input_signal -> [labels]
+    for label, inv_of in not_of.items():
+        inverts.setdefault(inv_of, []).append(label)
+
+    # Merge duplicates
+    replacements = {}
+    for input_sig, labels in inverts.items():
+        if len(labels) > 1:
+            # Pick canonical (prefer non-output)
+            canonical = None
+            for l in labels:
+                if not is_output_label(l):
+                    canonical = l
+                    break
+            if canonical is None:
+                canonical = labels[0]
+
+            for other in labels:
+                if other != canonical and not is_output_label(other):
+                    replacements[other] = canonical
+
+    if not replacements:
+        return gates
+
+    def resolve(label):
+        seen = set()
+        while label in replacements:
+            if label in seen:
+                break
+            seen.add(label)
+            label = replacements[label]
+        return label
+
+    optimized = []
+    for label, a, b in gates:
+        if label in replacements:
+            continue
+        a_new = resolve(a)
+        b_new = resolve(b)
+        optimized.append((label, a_new, b_new))
+
+    return optimized
+
+
+def optimize_cleanup_copies(gates):
+    """Remove unnecessary copy operations.
+
+    Pattern: t = NOT(g), out = NOT(t) where out just copies g.
+    If t is only used once (by this NOT), we can replace out with g.
+    """
+    gate_map = {label: (a, b) for label, a, b in gates}
+
+    # Count usage of each label
+    use_count = {}
+    for label, a, b in gates:
+        use_count[a] = use_count.get(a, 0) + 1
+        use_count[b] = use_count.get(b, 0) + 1
+
+    # Find NOT gates
+    not_gates = {}
+    for label, a, b in gates:
+        if a == b:
+            not_gates[label] = a
+
+    replacements = {}
+    for label, a, b in gates:
+        if a == b and a in not_gates:
+            original = not_gates[a]
+            intermediate = a
+            # If intermediate is only used once (by this gate)
+            if use_count.get(intermediate, 0) == 1:
+                if not is_output_label(label):
+                    replacements[label] = original
+
+    if not replacements:
+        return gates
+
+    def resolve(label):
+        seen = set()
+        while label in replacements:
+            if label in seen:
+                break
+            seen.add(label)
+            label = replacements[label]
+        return label
+
+    optimized = []
+    for label, a, b in gates:
+        if label in replacements:
+            continue
+        a_new = resolve(a)
+        b_new = resolve(b)
+        optimized.append((label, a_new, b_new))
+
+    return optimized
+
+
 def run_optimization_pass(gates, const_values, pass_name, optimize_func, *args):
     """Run a single optimization pass and report results."""
     before = len(gates)
@@ -491,13 +1009,22 @@ def optimize_circuit(gates, const_values, max_iterations=10):
         initial_count = len(gates)
 
         # Run all optimization passes
+        # Note: XOR optimizations must run BEFORE constant folding to find CONST-0/1 patterns
         gates = run_optimization_pass(gates, const_values, "CSE", optimize_cse)
+        gates = run_optimization_pass(gates, const_values, "Share inverters", optimize_share_inverters)
+        gates = run_optimization_pass(gates, const_values, "NAND to identity", optimize_nand_to_identity)
+        gates = run_optimization_pass(gates, const_values, "XOR chain", optimize_xor_chain)
+        gates = run_optimization_pass(gates, const_values, "XOR(0,x)=x", optimize_xor_with_zero)
+        gates = run_optimization_pass(gates, const_values, "XOR(1,x)=NOT(x)", optimize_xor_with_one)
+        gates = run_optimization_pass(gates, const_values, "Algebraic (x NAND !x)", optimize_algebraic)
         gates, known = optimize_constant_folding(gates, const_values)
         print(f"  Constant folding: applied")
         gates = run_optimization_pass(gates, const_values, "Dead code elimination", optimize_dead_code)
         gates = run_optimization_pass(gates, const_values, "Identity patterns", optimize_identity_patterns)
-        gates = run_optimization_pass(gates, const_values, "XOR(0,x)=x", optimize_xor_with_zero)
-        gates = run_optimization_pass(gates, const_values, "XOR(1,x)=NOT(x)", optimize_xor_with_one)
+        gates = run_optimization_pass(gates, const_values, "Double NOT", optimize_double_not)
+        gates = run_optimization_pass(gates, const_values, "AND(x,x)=x", optimize_and_simplification)
+        gates = run_optimization_pass(gates, const_values, "OR(x,x)=x", optimize_or_simplification)
+        gates = run_optimization_pass(gates, const_values, "Cleanup copies", optimize_cleanup_copies)
         gates = run_optimization_pass(gates, const_values, "Dead code (cleanup)", optimize_dead_code)
 
         final_count = len(gates)

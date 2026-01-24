@@ -113,51 +113,34 @@ class OptimizedNandConverter:
     def ch_gate(self, prefix, e, f, g):
         """Choice function: CH(e,f,g) = (e AND f) XOR (NOT(e) AND g).
 
-        Efficient implementation:
-        Ch(e,f,g) can be computed as: g XOR (e AND (f XOR g))
-        But that's 10 gates. Let's try the standard form optimized:
+        Optimal 4-NAND implementation:
+        CH(e,f,g) is equivalent to "if e then f else g" (2:1 MUX).
 
-        Standard: (e AND f) XOR (NOT(e) AND g)
-        - e AND f = NOT(NAND(e,f))
-        - NOT(e) computed once
-        - NOT(e) AND g = NOT(NAND(NOT(e), g))
-        - XOR of results
+        Derivation:
+        CH(e,f,g) = (e AND f) OR (NOT(e) AND g)
+                  = NOT(NOT((e AND f) OR (NOT(e) AND g)))
+                  = NOT(NOT(e AND f) AND NOT(NOT(e) AND g))
+                  = NAND(NAND(e,f), NAND(NOT(e),g))
 
-        Total: 9 gates (1 for ef_nand, 1 for NOT(e), 1 for neg_and_nand,
-                       2 for ANDs, 4 for XOR)
+        4 NANDs:
+        1. nand_ef = NAND(e, f)
+        2. not_e = NAND(e, e)
+        3. nand_noteg = NAND(not_e, g)
+        4. result = NAND(nand_ef, nand_noteg)
 
-        Actually can be optimized using direct NAND structure.
+        This saves 5 NANDs per bit vs the XOR-based implementation (9 → 4).
         """
-        # Standard implementation optimized for NAND
-        ef_nand = self.nand(prefix, e, f)  # NAND(e, f)
-        not_e = self.not_gate(prefix, e)    # NOT(e)
-        not_e_g_nand = self.nand(prefix, not_e, g)  # NAND(NOT(e), g)
+        # 1. NAND(e, f)
+        nand_ef = self.nand(prefix, e, f)
 
-        # We have ef_nand = NOT(AND(e,f)) and not_e_g_nand = NOT(AND(NOT(e), g))
-        # Now XOR(AND(e,f), AND(NOT(e),g))
+        # 2. NOT(e) = NAND(e, e)
+        not_e = self.not_gate(prefix, e)
 
-        # For XOR(x, y) where we have NAND results:
-        # XOR = NAND(NAND(x, NAND(x,y)), NAND(y, NAND(x,y)))
-        # Here x = NOT(ef_nand) = AND(e,f), y = NOT(not_e_g_nand) = AND(NOT(e),g)
+        # 3. NAND(NOT(e), g)
+        nand_noteg = self.nand(prefix, not_e, g)
 
-        # XOR(NOT(a), NOT(b)) = XOR(a, b) in terms of NANDs:
-        # Let p = ef_nand = NOT(AND(e,f)), q = not_e_g_nand = NOT(AND(NOT(e),g))
-        # XOR(NOT(p), NOT(q)) where p=ef_nand, q=not_e_g_nand
-
-        # Actually simpler:
-        # x = AND(e,f), y = AND(NOT(e), g)
-        # We have NAND(e,f) and NAND(NOT(e),g)
-        # x = NOT(ef_nand), y = NOT(not_e_g_nand)
-        # XOR(x, y):
-        #   xy_nand = NAND(x, y) = NAND(NOT(ef_nand), NOT(not_e_g_nand))
-        #           = OR(ef_nand, not_e_g_nand) [by De Morgan]
-        #   ... this is getting complex
-
-        # Let's just use standard XOR of the AND results
-        ef_and = self.not_gate(prefix, ef_nand)  # AND(e, f)
-        neg_and = self.not_gate(prefix, not_e_g_nand)  # AND(NOT(e), g)
-
-        return self.xor_gate(prefix, ef_and, neg_and)
+        # 4. Result = NAND(nand_ef, nand_noteg)
+        return self.nand(prefix, nand_ef, nand_noteg)
 
     def half_adder(self, prefix, a, b):
         """Half adder: returns (sum, carry)"""

@@ -237,21 +237,30 @@ nodes[label] = not (nodes[a] and nodes[b])
 
 Comprehensive optimization pipeline that combines all optimization strategies into a single tool.
 
+**Recommended usage** (best optimization):
 ```bash
-# From existing NAND file:
-python optimization-pipeline.py -n nands.txt -o nands-optimized-final.txt -v
+python optimization-pipeline.py -v
+```
 
-# From functions.txt (includes conversion):
-python optimization-pipeline.py -f functions.txt -o nands-optimized-final.txt -v
+This runs the complete optimized workflow:
+1. Converts `functions.txt` using `optimized-converter.py` (best primitives)
+2. Applies all optimization passes iteratively
+3. Verifies correctness against reference SHA-256
+4. Outputs to `nands-optimized-final.txt`
 
-# With custom input files and more verification tests:
-python optimization-pipeline.py -n nands.txt -i constants-bits.txt -o output.txt -v -t 10
+**Other usage patterns:**
+```bash
+# Optimize existing NAND file (less optimal starting point):
+python optimization-pipeline.py -n nands.txt -v
+
+# Custom input/output files:
+python optimization-pipeline.py -f functions.txt -i constants-bits.txt -o output.txt -v -t 10
 ```
 
 **Input/Output:**
-- **Input**: Either `nands.txt` (bit-level NAND gates) OR `functions.txt` (word-level functions)
+- **Input**: `functions.txt` (recommended) or existing NAND file via `-n`
 - **Input files**: Reads from `-i` specified files for constant/input values (default: `constants-bits.txt`)
-- **Output**: Optimized `nands.txt` file with `OUTPUT-W{0-7}-B{0-31}` labels
+- **Output**: Optimized NAND file (default: `nands-optimized-final.txt`)
 
 **Optimization Passes** (applied iteratively until convergence):
 1. **Output renaming**: Converts `FINAL-H*-ADD-B*` labels to `OUTPUT-W*-B*`

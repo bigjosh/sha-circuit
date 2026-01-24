@@ -113,12 +113,12 @@ class CircuitGenerator:
         return self.add_function(f"{label_prefix}-CH", "CH", [x, y, z])
 
     def maj(self, label_prefix, x, y, z):
-        """Maj(x,y,z) = (x AND y) XOR (x AND z) XOR (y AND z)."""
-        xy = self.bit_and(f"{label_prefix}-MAJ-XY", x, y)
-        xz = self.bit_and(f"{label_prefix}-MAJ-XZ", x, z)
-        yz = self.bit_and(f"{label_prefix}-MAJ-YZ", y, z)
-        t1 = self.bit_xor(f"{label_prefix}-MAJ-T1", xy, xz)
-        return self.bit_xor(f"{label_prefix}-MAJ", t1, yz)
+        """Maj(x,y,z) = (x AND y) XOR (x AND z) XOR (y AND z).
+
+        Equivalent to: majority vote of x, y, z (1 if at least 2 are 1)
+        Emitted as native MAJ operation for optimal 6-NAND decomposition.
+        """
+        return self.add_function(f"{label_prefix}-MAJ", "MAJ", [x, y, z])
 
     def sigma0(self, label_prefix, x):
         """Σ0(x) = ROTR(x,2) XOR ROTR(x,13) XOR ROTR(x,22)."""
