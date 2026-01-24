@@ -149,10 +149,13 @@ def optimize_constant_folding(gates, const_values):
     """Fold constant expressions and propagate constant values.
 
     Handles three-valued logic (0, 1, X):
-    - NAND(0, x) = 1 for any x (including X)
-    - NAND(1, 1) = 0
-    - NAND(1, X) = X
-    - NAND(X, X) = X
+    - NAND(0, x) = 1 for any x (including X) - CAN fold
+    - NAND(1, 1) = 0 - CAN fold
+    - NAND(1, X) = X - CANNOT fold (X means unknown, gate still needed)
+    - NAND(X, X) = X - CANNOT fold
+
+    X values are NOT folded because they represent "unknown at optimization time"
+    - the gate still performs computation at runtime.
     """
     known = dict(const_values)
     first_pass = []
@@ -162,40 +165,34 @@ def optimize_constant_folding(gates, const_values):
         a_val = known.get(a)
         b_val = known.get(b)
 
-        # If either input is 0, output is 1
+        # If either input is 0, output is 1 - can fold even with X
         if a_val == FALSE or b_val == FALSE:
             known[label] = TRUE
         elif a_val is not None and b_val is not None:
-            # Both inputs are known
+            # Both inputs are known (0, 1, or X)
             if a_val == TRUE and b_val == TRUE:
+                # NAND(1,1) = 0 - can fold
                 known[label] = FALSE
             elif a_val == UNKNOWN or b_val == UNKNOWN:
-                # At least one is X, neither is 0, so result is X
-                known[label] = UNKNOWN
+                # At least one is X, neither is 0
+                # Result is X - do NOT fold, keep the gate
+                first_pass.append((label, a, b))
             else:
-                # Standard NAND
+                # Standard NAND with known 0/1 values
                 known[label] = nand3(a_val, b_val)
         else:
             first_pass.append((label, a, b))
 
-    # Second pass: replace references to folded constants
+    # Second pass: replace references to folded constants (only 0 and 1, not X)
     optimized = []
     for label, a, b in first_pass:
         a_new = a
         b_new = b
 
-        if a in known:
-            val = known[a]
-            if val == UNKNOWN:
-                a_new = "CONST-X"
-            else:
-                a_new = f"CONST-{val}"
-        if b in known:
-            val = known[b]
-            if val == UNKNOWN:
-                b_new = "CONST-X"
-            else:
-                b_new = f"CONST-{val}"
+        if a in known and known[a] != UNKNOWN:
+            a_new = f"CONST-{known[a]}"
+        if b in known and known[b] != UNKNOWN:
+            b_new = f"CONST-{known[b]}"
 
         optimized.append((label, a_new, b_new))
 
