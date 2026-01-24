@@ -3,6 +3,7 @@
 Verify NAND circuit correctness by comparing against reference SHA-256 implementation.
 
 Tests with multiple random inputs to ensure circuit produces correct outputs.
+Supports three-valued logic: 0, 1, and X (unbound/unknown).
 
 Usage:
     python verify-circuit.py
@@ -16,12 +17,34 @@ import hashlib
 import os
 import random
 
+# Constants for three-valued logic
+FALSE = 0
+TRUE = 1
+UNKNOWN = 'X'
+
+
+def nand3(a, b):
+    """Three-valued NAND operation."""
+    if a == FALSE or b == FALSE:
+        return TRUE
+    if a == TRUE and b == TRUE:
+        return FALSE
+    return UNKNOWN
+
+
+def parse_value(value_str):
+    """Parse a value string to 0, 1, or 'X'."""
+    value_str = value_str.strip().upper()
+    if value_str == 'X':
+        return UNKNOWN
+    return TRUE if value_str == '1' else FALSE
+
 
 def load_inputs(filepaths):
     """Load input values from one or more input files.
 
     Each file should have lines in the format: label,value
-    where value is 0 or 1.
+    where value is 0, 1, or X.
     """
     nodes = {}
     for filepath in filepaths:
@@ -30,7 +53,7 @@ def load_inputs(filepaths):
                 line = line.strip()
                 if line:
                     label, value = line.split(',')
-                    nodes[label] = ('const', int(value))
+                    nodes[label] = ('const', parse_value(value))
     return nodes
 
 
@@ -52,30 +75,38 @@ def load_circuit(nands_file, input_files):
 
 
 def evaluate_circuit(nodes, gates, input_bits):
-    """Evaluate circuit with given input bits."""
+    """Evaluate circuit with given input bits using three-valued logic."""
     values = dict(nodes)
 
     # Set input bits
     for label, value in input_bits.items():
         values[label] = ('const', value)
 
-    # Evaluate gates
+    # Evaluate gates using three-valued NAND
     for label, a, b in gates:
         a_val = values[a][1] if isinstance(values[a], tuple) else values[a]
         b_val = values[b][1] if isinstance(values[b], tuple) else values[b]
-        result = 0 if (a_val == 1 and b_val == 1) else 1
+        result = nand3(a_val, b_val)
         values[label] = result
 
     # Extract output
     result = []
+    has_unknown = False
     for word in range(8):
         value = 0
+        word_unknown_bits = []
         for bit in range(32):
             label = f"OUTPUT-W{word}-B{bit}"
             v = values[label][1] if isinstance(values[label], tuple) else values[label]
-            if v:
+            if v == UNKNOWN:
+                has_unknown = True
+                word_unknown_bits.append(bit)
+            elif v == TRUE:
                 value |= (1 << bit)
-        result.append(f"{value:08x}")
+        if word_unknown_bits:
+            result.append(f"{value:08x}[X@{','.join(map(str, word_unknown_bits))}]")
+        else:
+            result.append(f"{value:08x}")
 
     return ''.join(result)
 

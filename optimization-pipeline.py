@@ -54,13 +54,27 @@ def save_circuit(filename, gates):
             f.write(f"{label},{a},{b}\n")
 
 
+# Constants for three-valued logic
+FALSE = 0
+TRUE = 1
+UNKNOWN = 'X'
+
+
+def parse_value(value_str):
+    """Parse a value string to 0, 1, or 'X'."""
+    value_str = value_str.strip().upper()
+    if value_str == 'X':
+        return UNKNOWN
+    return TRUE if value_str == '1' else FALSE
+
+
 def load_inputs(filenames):
     """Load input values from one or more input files.
 
     Each file should have lines in the format: label,value
-    where value is 0 or 1.
+    where value is 0, 1, or X.
     """
-    values = {'CONST-0': 0, 'CONST-1': 1}
+    values = {'CONST-0': FALSE, 'CONST-1': TRUE}
     for filename in filenames:
         try:
             with open(filename) as f:
@@ -68,22 +82,31 @@ def load_inputs(filenames):
                     if line.strip():
                         parts = line.strip().split(',')
                         if len(parts) >= 2:
-                            values[parts[0]] = int(parts[1])
+                            values[parts[0]] = parse_value(parts[1])
         except FileNotFoundError:
             pass
     return values
 
 
+def nand3(a, b):
+    """Three-valued NAND operation."""
+    if a == FALSE or b == FALSE:
+        return TRUE
+    if a == TRUE and b == TRUE:
+        return FALSE
+    return UNKNOWN
+
+
 def simulate_circuit(gates, input_values, const_values):
-    """Simulate circuit and return output values."""
+    """Simulate circuit and return output values using three-valued logic."""
     values = {}
     values.update(const_values)
     values.update(input_values)
 
     for label, a, b in gates:
-        a_val = values.get(a, 0)
-        b_val = values.get(b, 0)
-        values[label] = 1 - (a_val & b_val)  # NAND
+        a_val = values.get(a, FALSE)
+        b_val = values.get(b, FALSE)
+        values[label] = nand3(a_val, b_val)
 
     return values
 
@@ -123,7 +146,14 @@ def optimize_cse(gates):
 
 
 def optimize_constant_folding(gates, const_values):
-    """Fold constant expressions and propagate constant values."""
+    """Fold constant expressions and propagate constant values.
+
+    Handles three-valued logic (0, 1, X):
+    - NAND(0, x) = 1 for any x (including X)
+    - NAND(1, 1) = 0
+    - NAND(1, X) = X
+    - NAND(X, X) = X
+    """
     known = dict(const_values)
     first_pass = []
 
@@ -132,26 +162,40 @@ def optimize_constant_folding(gates, const_values):
         a_val = known.get(a)
         b_val = known.get(b)
 
-        if a_val is not None and b_val is not None:
-            # Both inputs are constants
-            result = 1 - (a_val & b_val)
-            known[label] = result
-        elif a_val == 0 or b_val == 0:
-            # NAND(x, 0) = 1
-            known[label] = 1
+        # If either input is 0, output is 1
+        if a_val == FALSE or b_val == FALSE:
+            known[label] = TRUE
+        elif a_val is not None and b_val is not None:
+            # Both inputs are known
+            if a_val == TRUE and b_val == TRUE:
+                known[label] = FALSE
+            elif a_val == UNKNOWN or b_val == UNKNOWN:
+                # At least one is X, neither is 0, so result is X
+                known[label] = UNKNOWN
+            else:
+                # Standard NAND
+                known[label] = nand3(a_val, b_val)
         else:
             first_pass.append((label, a, b))
 
-    # Second pass: replace references to folded constants with CONST-0 or CONST-1
+    # Second pass: replace references to folded constants
     optimized = []
     for label, a, b in first_pass:
         a_new = a
         b_new = b
 
         if a in known:
-            a_new = f"CONST-{known[a]}"
+            val = known[a]
+            if val == UNKNOWN:
+                a_new = "CONST-X"
+            else:
+                a_new = f"CONST-{val}"
         if b in known:
-            b_new = f"CONST-{known[b]}"
+            val = known[b]
+            if val == UNKNOWN:
+                b_new = "CONST-X"
+            else:
+                b_new = f"CONST-{val}"
 
         optimized.append((label, a_new, b_new))
 

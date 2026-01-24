@@ -124,7 +124,7 @@ LABEL,VALUE
 ```
 
 - **LABEL**: `{CONST}-B{bit}` where bit 0 = LSB, bit 31 = MSB
-- **VALUE**: `0` or `1`
+- **VALUE**: `0`, `1`, or `X` (unbound/unknown)
 
 Also includes special constants `CONST-0` and `CONST-1`.
 
@@ -149,6 +149,29 @@ INPUT-W0-B1,0
 INPUT-W0-B2,1
 ...
 ```
+
+### Three-Valued Logic
+
+The circuit supports three-valued logic where `X` represents an unbound or unknown value. This is useful for:
+- Analyzing which outputs depend on which inputs
+- Partial evaluation when some inputs are unknown
+- Circuit optimization and analysis
+
+X values propagate through NAND gates according to:
+
+| A | B | NAND |
+|---|---|------|
+| 0 | 0 | 1 |
+| 0 | 1 | 1 |
+| 1 | 0 | 1 |
+| 1 | 1 | 0 |
+| 0 | X | 1 |
+| X | 0 | 1 |
+| 1 | X | X |
+| X | 1 | X |
+| X | X | X |
+
+**Key insight**: If either input is 0, the output is always 1 (regardless of X).
 
 #### nands.txt
 
