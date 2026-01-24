@@ -100,23 +100,32 @@ def main():
 
     # Extract output bits and assemble hash
     result = []
-    has_unknown = False
+    total_unknown = 0
     for word in range(8):
-        value = 0
-        word_unknown_bits = []
-        for bit in range(32):
-            bit_val = nodes[f"OUTPUT-W{word}-B{bit}"]
-            if bit_val == UNKNOWN:
-                has_unknown = True
-                word_unknown_bits.append(bit)
-            elif bit_val == TRUE:
-                value |= (1 << bit)
-        if word_unknown_bits:
-            result.append(f"{value:08x}[X@{','.join(map(str, word_unknown_bits))}]")
-        else:
-            result.append(f"{value:08x}")
+        # Process each nibble (4 bits) separately for readable hex output
+        word_hex = []
+        for nibble in range(8):  # 8 nibbles per 32-bit word, MSB first
+            nibble_idx = 7 - nibble  # Start from high nibble
+            nibble_value = 0
+            nibble_has_unknown = False
+            for bit_in_nibble in range(4):
+                bit = nibble_idx * 4 + bit_in_nibble
+                bit_val = nodes[f"OUTPUT-W{word}-B{bit}"]
+                if bit_val == UNKNOWN:
+                    nibble_has_unknown = True
+                    total_unknown += 1
+                elif bit_val == TRUE:
+                    nibble_value |= (1 << bit_in_nibble)
+            if nibble_has_unknown:
+                word_hex.append('x')  # lowercase x for unknown nibble
+            else:
+                word_hex.append(f"{nibble_value:x}")
+        result.append(''.join(word_hex))
 
-    print(''.join(result))
+    hash_str = ''.join(result)
+    print(hash_str)
+    if total_unknown > 0:
+        print(f"({total_unknown}/256 bits unknown)")
 
 
 if __name__ == "__main__":

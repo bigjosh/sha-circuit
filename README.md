@@ -123,6 +123,23 @@ The circuit supports three-valued logic where `X` represents an unknown value:
 
 Key insight: If either input is 0, output is always 1.
 
+### Unknown Input Bytes
+
+Use `?` in ASCII or `XX` in hex to mark unknown bytes:
+
+```bash
+python generate-input.py "hel?o"              # ASCII with unknown byte
+python generate-input.py --hex "68656cXX6f"   # Hex with unknown byte
+```
+
+Output uses lowercase `x` for nibbles containing unknown bits:
+```
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+(256/256 bits unknown)
+```
+
+Due to SHA-256's avalanche effect, any unknown input bit causes all 256 output bits to become unknown.
+
 ## Optimizations
 
 ### NAND Decomposition
