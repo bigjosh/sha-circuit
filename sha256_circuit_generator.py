@@ -326,7 +326,7 @@ def write_files(output_dir=".", message=b""):
 if __name__ == "__main__":
     import sys
 
-    message = b"josh" if len(sys.argv) < 2 else sys.argv[1].encode()
+    message = b"josh is nice" if len(sys.argv) < 2 else sys.argv[1].encode()
     output_dir = "." if len(sys.argv) < 3 else sys.argv[2]
 
     write_files(output_dir, message)

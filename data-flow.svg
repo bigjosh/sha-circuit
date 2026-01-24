@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 620">
+  <defs>
+    <style>
+      .title { font: bold 20px sans-serif; fill: #333; }
+      .subtitle { font: italic 11px sans-serif; fill: #666; }
+      .program { font: bold 11px monospace; fill: white; }
+      .file { font: 11px monospace; fill: #333; }
+      .label { font: 9px sans-serif; fill: #666; }
+      .section-label { font: bold 12px sans-serif; fill: #555; }
+      .step { font: bold 14px sans-serif; fill: #357abd; }
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#555"/>
+    </marker>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a90d9"/>
+      <stop offset="100%" style="stop-color:#357abd"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5cb85c"/>
+      <stop offset="100%" style="stop-color:#449d44"/>
+    </linearGradient>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f0ad4e"/>
+      <stop offset="100%" style="stop-color:#ec971f"/>
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#9b59b6"/>
+      <stop offset="100%" style="stop-color:#8e44ad"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="850" height="620" fill="#fafafa"/>
+
+  <!-- Title -->
+  <text x="425" y="28" text-anchor="middle" class="title">SHA-256 NAND Circuit - Data Flow</text>
+  <text x="425" y="44" text-anchor="middle" class="subtitle">Each program reads files and outputs files. No subprocess calls.</text>
+
+  <!-- ========== BUILD PIPELINE (Left side) ========== -->
+  <rect x="15" y="60" width="480" height="380" rx="8" fill="#f0f8ff" stroke="#b8d4ec"/>
+  <text x="30" y="80" class="section-label">Build Pipeline</text>
+
+  <!-- Step 1 -->
+  <text x="25" y="115" class="step">[1]</text>
+  <rect x="50" y="100" width="200" height="32" rx="5" fill="url(#blueGrad)"/>
+  <text x="150" y="120" text-anchor="middle" class="program">sha256_circuit_generator.py</text>
+
+  <line x1="250" y1="116" x2="305" y2="116" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="307" y="98" width="110" height="24" fill="white" stroke="#4a90d9" stroke-width="2"/>
+  <text x="362" y="114" text-anchor="middle" class="file">functions.txt</text>
+  <text x="362" y="134" text-anchor="middle" class="label">2,416 operations</text>
+
+  <rect x="307" y="148" width="110" height="24" fill="white" stroke="#4a90d9" stroke-width="2"/>
+  <text x="362" y="164" text-anchor="middle" class="file">constants.txt</text>
+  <text x="362" y="184" text-anchor="middle" class="label">72 words (K + H)</text>
+
+  <path d="M 250 116 L 275 116 L 275 160 L 305 160" fill="none" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Step 2 -->
+  <text x="25" y="225" class="step">[2]</text>
+  <rect x="50" y="210" width="140" height="32" rx="5" fill="url(#blueGrad)"/>
+  <text x="120" y="230" text-anchor="middle" class="program">expand-words.py</text>
+  <text x="120" y="255" text-anchor="middle" class="label">--add-constants</text>
+
+  <path d="M 362 172 L 362 196 L 25 196 L 25 226 L 48 226" fill="none" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <line x1="190" y1="226" x2="305" y2="226" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="307" y="214" width="130" height="24" fill="white" stroke="#4a90d9" stroke-width="2"/>
+  <text x="372" y="230" text-anchor="middle" class="file">constants-bits.txt</text>
+  <text x="372" y="250" text-anchor="middle" class="label">2,306 bits</text>
+
+  <!-- Step 3 -->
+  <text x="25" y="305" class="step">[3]</text>
+  <rect x="50" y="290" width="165" height="32" rx="5" fill="url(#blueGrad)"/>
+  <text x="132" y="310" text-anchor="middle" class="program">optimized-converter.py</text>
+
+  <path d="M 417 110 L 455 110 L 455 275 L 25 275 L 25 306 L 48 306" fill="none" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <line x1="215" y1="306" x2="305" y2="306" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="307" y="294" width="100" height="24" fill="white" stroke="#4a90d9" stroke-width="2"/>
+  <text x="357" y="310" text-anchor="middle" class="file">nands.txt</text>
+  <text x="357" y="330" text-anchor="middle" class="label">295,200 gates</text>
+
+  <!-- Step 4 -->
+  <text x="25" y="385" class="step">[4]</text>
+  <rect x="50" y="370" width="145" height="32" rx="5" fill="url(#greenGrad)"/>
+  <text x="122" y="390" text-anchor="middle" class="program">optimize-nands.py</text>
+
+  <path d="M 357 318 L 357 350 L 25 350 L 25 386 L 48 386" fill="none" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <path d="M 372 238 L 372 260 L 470 260 L 470 350 L 205 350 L 205 368" fill="none" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <line x1="195" y1="386" x2="305" y2="386" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="307" y="368" width="175" height="32" fill="white" stroke="#5cb85c" stroke-width="3"/>
+  <text x="394" y="388" text-anchor="middle" class="file" style="font-weight:bold">nands-optimized-final.txt</text>
+  <text x="394" y="418" text-anchor="middle" class="label" style="font-weight:bold;fill:#449d44">230,559 gates (22% reduction)</text>
+
+  <!-- ========== INPUT GENERATION (Right side) ========== -->
+  <rect x="515" y="60" width="320" height="200" rx="8" fill="#f5f0ff" stroke="#d4c4ec"/>
+  <text x="530" y="80" class="section-label">Input Generation</text>
+
+  <!-- Step A -->
+  <text x="525" y="115" class="step">[A]</text>
+  <rect x="550" y="100" width="130" height="32" rx="5" fill="url(#purpleGrad)"/>
+  <text x="615" y="120" text-anchor="middle" class="program">generate-input.py</text>
+
+  <text x="550" y="150" class="label">"hello" or --hex</text>
+
+  <line x1="680" y1="116" x2="720" y2="116" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="722" y="104" width="95" height="24" fill="white" stroke="#9b59b6" stroke-width="2"/>
+  <text x="769" y="120" text-anchor="middle" class="file">input.txt</text>
+  <text x="769" y="140" text-anchor="middle" class="label">16 words</text>
+
+  <!-- Step B -->
+  <text x="525" y="195" class="step">[B]</text>
+  <rect x="550" y="180" width="130" height="32" rx="5" fill="url(#purpleGrad)"/>
+  <text x="615" y="200" text-anchor="middle" class="program">expand-words.py</text>
+
+  <path d="M 769 128 L 769 165 L 525 165 L 525 196 L 548 196" fill="none" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <line x1="680" y1="196" x2="720" y2="196" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="722" y="184" width="95" height="24" fill="white" stroke="#9b59b6" stroke-width="2"/>
+  <text x="769" y="200" text-anchor="middle" class="file">input-bits.txt</text>
+  <text x="769" y="220" text-anchor="middle" class="label">512 bits</text>
+
+  <!-- ========== EVALUATION (Bottom) ========== -->
+  <rect x="15" y="460" width="820" height="110" rx="8" fill="#fcf4e8" stroke="#ecdcb8"/>
+  <text x="30" y="480" class="section-label">Evaluation &amp; Verification</text>
+
+  <!-- verify-circuit.py -->
+  <rect x="35" y="505" width="125" height="28" rx="5" fill="url(#orangeGrad)"/>
+  <text x="97" y="523" text-anchor="middle" class="program">verify-circuit.py</text>
+  <text x="97" y="548" text-anchor="middle" class="label">vs reference SHA-256</text>
+
+  <!-- eval-nands.py -->
+  <rect x="200" y="505" width="110" height="28" rx="5" fill="url(#orangeGrad)"/>
+  <text x="255" y="523" text-anchor="middle" class="program">eval-nands.py</text>
+  <text x="255" y="548" text-anchor="middle" class="label">gate-level eval</text>
+
+  <!-- eval-functions.py -->
+  <rect x="350" y="505" width="125" height="28" rx="5" fill="url(#orangeGrad)"/>
+  <text x="412" y="523" text-anchor="middle" class="program">eval-functions.py</text>
+  <text x="412" y="548" text-anchor="middle" class="label">high-level eval</text>
+
+  <!-- Output -->
+  <rect x="520" y="505" width="120" height="28" fill="white" stroke="#f0ad4e" stroke-width="2"/>
+  <text x="580" y="523" text-anchor="middle" class="file">SHA-256 Hash</text>
+  <text x="580" y="548" text-anchor="middle" class="label">256-bit output</text>
+
+  <!-- ========== LEGEND ========== -->
+  <rect x="680" y="490" width="145" height="75" rx="6" fill="white" stroke="#ddd"/>
+  <text x="695" y="507" class="section-label">Legend</text>
+  <rect x="695" y="517" width="40" height="12" rx="2" fill="url(#blueGrad)"/>
+  <text x="745" y="527" class="label">Generator</text>
+  <rect x="695" y="533" width="40" height="12" rx="2" fill="url(#greenGrad)"/>
+  <text x="745" y="543" class="label">Optimizer</text>
+  <rect x="695" y="549" width="40" height="12" rx="2" fill="url(#orangeGrad)"/>
+  <text x="745" y="559" class="label">Evaluator</text>
+
+</svg>

@@ -349,7 +349,7 @@ class OptimizedNandConverter:
 def main():
     parser = argparse.ArgumentParser(description="Optimized functions to NAND converter")
     parser.add_argument("--input", "-i", default="functions.txt", help="Input file")
-    parser.add_argument("--output", "-o", default="nands-optimized-new.txt", help="Output file")
+    parser.add_argument("--output", "-o", default="nands.txt", help="Output file")
     args = parser.parse_args()
 
     converter = OptimizedNandConverter()
