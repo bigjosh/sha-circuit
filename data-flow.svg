@@ -144,15 +144,10 @@
   <text x="255" y="523" text-anchor="middle" class="program">eval-nands.py</text>
   <text x="255" y="548" text-anchor="middle" class="label">gate-level eval</text>
 
-  <!-- eval-functions.py -->
-  <rect x="350" y="505" width="125" height="28" rx="5" fill="url(#orangeGrad)"/>
-  <text x="412" y="523" text-anchor="middle" class="program">eval-functions.py</text>
-  <text x="412" y="548" text-anchor="middle" class="label">high-level eval</text>
-
   <!-- Output -->
-  <rect x="520" y="505" width="120" height="28" fill="white" stroke="#f0ad4e" stroke-width="2"/>
-  <text x="580" y="523" text-anchor="middle" class="file">SHA-256 Hash</text>
-  <text x="580" y="548" text-anchor="middle" class="label">256-bit output</text>
+  <rect x="350" y="505" width="120" height="28" fill="white" stroke="#f0ad4e" stroke-width="2"/>
+  <text x="410" y="523" text-anchor="middle" class="file">SHA-256 Hash</text>
+  <text x="410" y="548" text-anchor="middle" class="label">256-bit output</text>
 
   <!-- ========== LEGEND ========== -->
   <rect x="680" y="490" width="145" height="75" rx="6" fill="white" stroke="#ddd"/>

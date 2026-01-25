@@ -25,7 +25,7 @@ Supports three-valued logic (0, 1, X) where X = unbound/unknown.
 
 Usage:
     python optimize-nands.py
-    python optimize-nands.py -n nands.txt -i constants-bits.txt -o nands-optimized-final.txt
+    python optimize-nands.py -n nands.txt -i constants-bits.txt -r results-bits.txt -o nands-optimized-final.txt
 """
 
 import argparse
@@ -64,15 +64,34 @@ def save_circuit(filename, gates):
             f.write(f"{label},{a},{b}\n")
 
 
-def is_output_label(label):
-    """Check if a label is a circuit output (should not be replaced/deleted)."""
-    if label.startswith("OUTPUT-"):
-        return True
-    if label.startswith("FINAL-H") and "-ADD-B" in label:
-        parts = label.split("-ADD-B")
-        if len(parts) == 2 and "-T" not in parts[1]:
-            return True
-    return False
+def load_outputs(filepath):
+    """Load output labels from results-bits.txt file.
+
+    File format: one line per output bit as "label,X" where X indicates unknown.
+    """
+    outputs = set()
+    with open(filepath, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                label, _ = line.split(',')
+                outputs.add(label)
+    return outputs
+
+
+# Global outputs set - loaded once at startup, used by optimization passes
+_outputs = set()
+
+
+def set_outputs(outputs):
+    """Set the global outputs set."""
+    global _outputs
+    _outputs = outputs
+
+
+def get_outputs():
+    """Get the global outputs set."""
+    return _outputs
 
 
 def parse_value(value_str):
@@ -112,6 +131,7 @@ def nand3(a, b):
 
 def optimize_cse(gates):
     """Common Subexpression Elimination."""
+    outputs = get_outputs()
     seen = {}
     replacements = {}
     optimized = []
@@ -121,7 +141,7 @@ def optimize_cse(gates):
         b_new = replacements.get(b, b)
         key = (min(a_new, b_new), max(a_new, b_new))
 
-        if key in seen and not is_output_label(label):
+        if key in seen and label not in outputs:
             replacements[label] = seen[key]
         else:
             if key not in seen:
@@ -191,7 +211,7 @@ def rename_outputs(gates):
 
 def optimize_dead_code(gates):
     """Remove gates not needed for outputs."""
-    outputs = {label for label, _, _ in gates if is_output_label(label)}
+    outputs = get_outputs()
     gate_map = {label: (a, b) for label, a, b in gates}
 
     needed = set(outputs)
@@ -212,6 +232,7 @@ def optimize_dead_code(gates):
 
 def optimize_identity_patterns(gates):
     """Remove NOT(NOT(x)) = x patterns."""
+    outputs = get_outputs()
     gate_map = {label: (a, b) for label, a, b in gates}
     replacements = {}
 
@@ -236,7 +257,7 @@ def optimize_identity_patterns(gates):
         else:
             continue
 
-        if not is_output_label(label):
+        if label not in outputs:
             replacements[label] = x
 
     if not replacements:
@@ -262,6 +283,7 @@ def optimize_identity_patterns(gates):
 
 def optimize_xor_with_zero(gates):
     """Optimize XOR(x, 0) = x patterns."""
+    outputs = get_outputs()
     gate_map = {label: (a, b) for label, a, b in gates}
 
     def identify_xor(label):
@@ -299,9 +321,9 @@ def optimize_xor_with_zero(gates):
         xor_inputs = identify_xor(label)
         if xor_inputs:
             a, b = xor_inputs
-            if a == 'CONST-0' and not is_output_label(label):
+            if a == 'CONST-0' and label not in outputs:
                 replacements[label] = b
-            elif b == 'CONST-0' and not is_output_label(label):
+            elif b == 'CONST-0' and label not in outputs:
                 replacements[label] = a
 
     if not replacements:
@@ -390,6 +412,7 @@ def optimize_xor_with_one(gates):
 
 def optimize_share_inverters(gates):
     """Share NOT gates computing the same thing."""
+    outputs = get_outputs()
     not_of = {}
     for label, a, b in gates:
         if a == b:
@@ -404,14 +427,14 @@ def optimize_share_inverters(gates):
         if len(labels) > 1:
             canonical = None
             for l in labels:
-                if not l.startswith("OUTPUT-"):
+                if l not in outputs:
                     canonical = l
                     break
             if canonical is None:
                 canonical = labels[0]
 
             for other in labels:
-                if other != canonical and not other.startswith("OUTPUT-"):
+                if other != canonical and other not in outputs:
                     replacements[other] = canonical
 
     if not replacements:
@@ -437,6 +460,7 @@ def optimize_share_inverters(gates):
 
 def optimize_algebraic(gates):
     """Apply algebraic simplifications: NAND(x, NOT(x)) = 1."""
+    outputs = get_outputs()
     gate_map = {label: (a, b) for label, a, b in gates}
 
     not_of = {}
@@ -451,10 +475,10 @@ def optimize_algebraic(gates):
     replacements = {}
     for label, a, b in gates:
         if a in not_of and not_of[a] == b:
-            if not is_output_label(label):
+            if label not in outputs:
                 replacements[label] = 'CONST-1'
         elif b in not_of and not_of[b] == a:
-            if not is_output_label(label):
+            if label not in outputs:
                 replacements[label] = 'CONST-1'
 
     if not replacements:
@@ -480,6 +504,7 @@ def optimize_algebraic(gates):
 
 def optimize_and_simplification(gates):
     """Optimize AND(x, x) = x patterns."""
+    outputs = get_outputs()
     gate_map = {label: (a, b) for label, a, b in gates}
 
     replacements = {}
@@ -487,7 +512,7 @@ def optimize_and_simplification(gates):
         if a == b and a in gate_map:
             inner_a, inner_b = gate_map[a]
             if inner_a == inner_b:
-                if not is_output_label(label):
+                if label not in outputs:
                     replacements[label] = inner_a
 
     if not replacements:
@@ -513,6 +538,7 @@ def optimize_and_simplification(gates):
 
 def optimize_or_simplification(gates):
     """Recognize OR gates and simplify OR(x, x) = x."""
+    outputs = get_outputs()
     gate_map = {label: (a, b) for label, a, b in gates}
 
     replacements = {}
@@ -523,7 +549,7 @@ def optimize_or_simplification(gates):
 
             if a_inner_a == a_inner_b and b_inner_a == b_inner_b:
                 if a_inner_a == b_inner_a:
-                    if not is_output_label(label):
+                    if label not in outputs:
                         replacements[label] = a_inner_a
 
     if not replacements:
@@ -549,6 +575,7 @@ def optimize_or_simplification(gates):
 
 def optimize_double_not(gates):
     """More aggressive double negation elimination."""
+    outputs = get_outputs()
     gate_map = {label: (a, b) for label, a, b in gates}
 
     not_gates = {}
@@ -572,7 +599,7 @@ def optimize_double_not(gates):
 
         if inner and inner in not_gates:
             original = not_gates[inner]
-            if not is_output_label(label):
+            if label not in outputs:
                 replacements[label] = original
 
     if not replacements:
@@ -598,6 +625,7 @@ def optimize_double_not(gates):
 
 def optimize_xor_chain(gates):
     """Recognize and deduplicate XOR patterns."""
+    outputs = get_outputs()
     gate_map = {label: (a, b) for label, a, b in gates}
 
     def identify_xor(label):
@@ -645,14 +673,14 @@ def optimize_xor_chain(gates):
         if len(labels) > 1:
             canonical = None
             for l in labels:
-                if not is_output_label(l):
+                if l not in outputs:
                     canonical = l
                     break
             if canonical is None:
                 canonical = labels[0]
 
             for other in labels:
-                if other != canonical and not is_output_label(other):
+                if other != canonical and other not in outputs:
                     replacements[other] = canonical
 
     if not replacements:
@@ -678,6 +706,7 @@ def optimize_xor_chain(gates):
 
 def optimize_nand_to_identity(gates):
     """Merge equivalent NOT gates."""
+    outputs = get_outputs()
     not_of = {}
     for label, a, b in gates:
         if a == b:
@@ -696,14 +725,14 @@ def optimize_nand_to_identity(gates):
         if len(labels) > 1:
             canonical = None
             for l in labels:
-                if not is_output_label(l):
+                if l not in outputs:
                     canonical = l
                     break
             if canonical is None:
                 canonical = labels[0]
 
             for other in labels:
-                if other != canonical and not is_output_label(other):
+                if other != canonical and other not in outputs:
                     replacements[other] = canonical
 
     if not replacements:
@@ -729,6 +758,7 @@ def optimize_nand_to_identity(gates):
 
 def optimize_cleanup_copies(gates):
     """Remove unnecessary copy operations."""
+    outputs = get_outputs()
     gate_map = {label: (a, b) for label, a, b in gates}
 
     use_count = {}
@@ -747,7 +777,7 @@ def optimize_cleanup_copies(gates):
             original = not_gates[a]
             intermediate = a
             if use_count.get(intermediate, 0) == 1:
-                if not is_output_label(label):
+                if label not in outputs:
                     replacements[label] = original
 
     if not replacements:
@@ -840,6 +870,8 @@ def main():
                         help="Input NAND circuit file (default: nands.txt)")
     parser.add_argument("--inputs", "-i", action="append", default=None,
                         help="Input file(s) containing constant bit values")
+    parser.add_argument("--results", "-r", default="results-bits.txt",
+                        help="Results file specifying output labels (default: results-bits.txt)")
     parser.add_argument("--output", "-o", default="nands-optimized-final.txt",
                         help="Output optimized NAND file (default: nands-optimized-final.txt)")
     args = parser.parse_args()
@@ -847,6 +879,12 @@ def main():
     print("=" * 60)
     print("NAND Circuit Optimizer")
     print("=" * 60)
+
+    # Load outputs (results specification)
+    print(f"\nLoading outputs from {args.results}...")
+    outputs = load_outputs(args.results)
+    set_outputs(outputs)
+    print(f"  Loaded {len(outputs)} output labels")
 
     # Determine input files
     if args.inputs:

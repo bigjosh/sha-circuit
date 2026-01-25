@@ -2,7 +2,7 @@
 
 A complete implementation of SHA-256 as a circuit of NAND gates.
 
-**Result: 230,549 NAND gates** (22% reduction from initial 295,200)
+We also have tools for doing experiments on bound and unbound bits in the input and out bits of the hash. 
 
 ## Quick Start
 
@@ -10,6 +10,7 @@ A complete implementation of SHA-256 as a circuit of NAND gates.
 # Build the optimized circuit (one-time)
 python sha256_circuit_generator.py
 python expand-words.py -i constants.txt -o constants-bits.txt --add-constants
+python expand-words.py -i results.txt -o results-bits.txt
 python optimized-converter.py
 python optimize-nands.py
 
@@ -23,31 +24,6 @@ python eval-nands.py -n nands-optimized-final.txt
 ## Data Flow
 
 ![Data Flow Diagram](data-flow.svg)
-
-### Build Pipeline
-
-```
-[1] sha256_circuit_generator.py  → functions.txt (2,416 ops), constants.txt (72 words)
-[2] expand-words.py -c           → constants-bits.txt (2,306 bits)
-[3] optimized-converter.py       → nands.txt (295,200 gates)
-[4] optimize-nands.py            → nands-optimized-final.txt (230,549 gates)
-```
-
-### Input Generation
-
-```
-[A] generate-input.py "hello"    → input.txt (16 words)
-[B] expand-words.py              → input-bits.txt (512 bits)
-```
-
-### Evaluation & Verification
-
-```
-eval-nands.py      - Evaluate gate-level circuit
-eval-functions.py  - Evaluate word-level functions
-verify-circuit.py  - Verify against reference SHA-256
-analyze-layers.py  - Analyze circuit depth
-```
 
 ## File Formats
 
@@ -76,6 +52,14 @@ R0-CH,CH,R63-VAR-E,R63-VAR-F,R63-VAR-G
 ...
 ```
 
+**results.txt** - 8 output words (all unknown, computed by circuit)
+```
+OUTPUT-W0,XXXXXXXX
+OUTPUT-W1,XXXXXXXX
+...
+OUTPUT-W7,XXXXXXXX
+```
+
 ### Bit-Level Files
 
 **constants-bits.txt** / **input-bits.txt** - Individual bits (0, 1, or X for unknown)
@@ -92,21 +76,70 @@ K-0-B1,0
 LABEL,INPUT_A,INPUT_B
 ```
 
-Output nodes: `OUTPUT-W0-B0` through `OUTPUT-W7-B31`
+**results-bits.txt** - Output specification (256 bits)
+```
+OUTPUT-W0-B0,X
+OUTPUT-W0-B1,X
+...
+OUTPUT-W7-B31,X
+```
+The `X` indicates expected value is unknown (computed by circuit).
 
 ## Programs
 
-| Program | Purpose |
-|---------|---------|
-| `sha256_circuit_generator.py` | Generate functions.txt and constants.txt from SHA-256 spec |
-| `expand-words.py` | Expand 32-bit words to individual bits |
-| `optimized-converter.py` | Convert functions to NAND gates (optimized primitives) |
-| `optimize-nands.py` | Apply optimization passes to reduce gate count |
-| `generate-input.py` | Create input.txt from ASCII or hex string |
-| `eval-nands.py` | Evaluate NAND circuit |
-| `eval-functions.py` | Evaluate word-level circuit |
-| `verify-circuit.py` | Verify circuit against reference SHA-256 |
-| `analyze-layers.py` | Analyze circuit depth and critical path |
+### Build Pipeline
+
+**`sha256_circuit_generator.py`**
+- Generates the SHA-256 circuit from specification. Produces word-level operations (ADD, XOR, ROTR, etc.), round constants K0-K63, initial hash values H0-H7, and output labels.
+- Inputs: (none)
+- Outputs: `functions.txt`, `constants.txt`, `results.txt`
+
+**`expand-words.py`**
+- Expands 32-bit words to individual bits. Each word becomes 32 bit lines. Supports unknown bytes (`XX` in hex → `X` bits).
+- Inputs: word-level file (`constants.txt`, `input.txt`, or `results.txt`)
+- Outputs: bit-level file (`constants-bits.txt`, `input-bits.txt`, or `results-bits.txt`)
+- Flags: `-c` adds CONST-0 and CONST-1 (use for constants only)
+
+**`optimized-converter.py`**
+- Converts word-level operations to NAND gates using optimized decompositions (4-NAND XOR, 13-NAND full adder, etc.).
+- Inputs: `functions.txt`
+- Outputs: `nands.txt`
+
+**`optimize-nands.py`**
+- Applies optimization passes (CSE, constant folding, dead code elimination, etc.) iteratively until convergence. Reduces gate count by ~22%.
+- Inputs: `nands.txt`, `constants-bits.txt`, `results-bits.txt`
+- Outputs: `nands-optimized-final.txt`
+
+### Input Generation
+
+**`generate-input.py`**
+- Creates padded SHA-256 message block from ASCII text or hex string. Supports unknown bytes (`?` in ASCII, `XX` in hex).
+- Inputs: command line argument (ASCII string or `--hex`)
+- Outputs: `input.txt`
+
+### Evaluation & Verification
+
+**`eval-nands.py`**
+- Evaluates the NAND circuit with given inputs. Supports three-valued logic (0, 1, X). Outputs hash in hex with `x` for unknown nibbles.
+- Inputs: `nands*.txt`, `constants-bits.txt`, `input-bits.txt`, `results-bits.txt`
+- Outputs: hash (stdout)
+
+**`verify-circuit.py`**
+- Tests circuit against Python's hashlib.sha256 with fixed and random messages.
+- Inputs: `nands*.txt`, `constants-bits.txt`
+- Outputs: pass/fail (stdout)
+
+### Utilities
+
+**`ablate-outputs.py`**
+- Removes output bits from results file to enable dead code elimination for partial hash computation.
+- Inputs: `results-bits.txt`
+- Outputs: `results-ablated.txt`
+
+**`analyze-layers.py`**
+- Computes circuit depth (critical path length) and layer statistics.
+- Inputs: `nands*.txt`
+- Outputs: depth analysis (stdout)
 
 ## Three-Valued Logic
 
@@ -180,8 +213,10 @@ The optimizer applies these passes iteratively until convergence:
 |------|----------|
 | functions.txt | 2,416 operations |
 | constants.txt | 72 words (64 K + 8 H) |
+| results.txt | 8 words (output specification) |
 | constants-bits.txt | 2,306 bits |
 | input-bits.txt | 512 bits |
+| results-bits.txt | 256 output labels |
 | nands.txt | 295,200 gates |
 | **nands-optimized-final.txt** | **230,549 gates** |
 

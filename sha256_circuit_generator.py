@@ -317,10 +317,16 @@ def write_files(output_dir=".", message=b""):
     with open(os.path.join(output_dir, "functions.txt"), "w") as f:
         f.write("\n".join(func_lines))
 
+    # Write results.txt (8 output words, all unknown)
+    results_lines = [f"OUTPUT-W{i},XXXXXXXX" for i in range(8)]
+    with open(os.path.join(output_dir, "results.txt"), "w") as f:
+        f.write("\n".join(results_lines))
+
     print(f"Generated files in {output_dir}:")
     print(f"  input.txt: {len(input_lines)} lines")
     print(f"  constants.txt: {len(const_lines)} lines")
     print(f"  functions.txt: {len(func_lines)} lines")
+    print(f"  results.txt: {len(results_lines)} lines")
 
 
 if __name__ == "__main__":
